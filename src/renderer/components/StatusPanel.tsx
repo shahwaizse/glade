@@ -1,16 +1,26 @@
-import type { CampOverview } from "../../shared/types";
+import type { CampOverview, HostRuntimeInfo } from "../../shared/types";
 
 interface StatusPanelProps {
   camp: CampOverview | null;
+  host: HostRuntimeInfo | null;
 }
 
-export function StatusPanel({ camp }: StatusPanelProps) {
+export function StatusPanel({ camp, host }: StatusPanelProps) {
   return (
     <div className="status-stack">
       <section className="panel">
         <span className="eyebrow">Tree</span>
         <h3>{camp?.branch ?? "..."}</h3>
         <p>Branch and worktree context stay visible while you build inside the camp.</p>
+      </section>
+
+      <section className="panel">
+        <span className="eyebrow">Bridge</span>
+        <h3>{host?.hostPlatform ?? "..."}</h3>
+        <p>
+          Host runtime: {host?.isWslHost ? "WSL/Linux" : host?.hostPlatform ?? "unknown"}.
+          {camp ? ` Camp runtime: ${camp.environment}.` : ""}
+        </p>
       </section>
 
       <section className="panel">
@@ -43,4 +53,3 @@ export function StatusPanel({ camp }: StatusPanelProps) {
     </div>
   );
 }
-

@@ -4,6 +4,7 @@ import { Terminal } from "@xterm/xterm";
 import type { CampOverview, TerminalSessionSummary } from "../../shared/types";
 
 const QUICK_COMMANDS = [
+  { label: "codex", command: "codex\n" },
   { label: "status", command: "git status\n" },
   { label: "trees", command: "git worktree list\n" },
   { label: "files", command: "ls\n" },
@@ -12,9 +13,10 @@ const QUICK_COMMANDS = [
 
 interface SessionConsoleProps {
   camp: CampOverview | null;
+  compact?: boolean;
 }
 
-export function SessionConsole({ camp }: SessionConsoleProps) {
+export function SessionConsole({ camp, compact = false }: SessionConsoleProps) {
   const terminalHostRef = useRef<HTMLDivElement | null>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
@@ -78,8 +80,8 @@ export function SessionConsole({ camp }: SessionConsoleProps) {
 
     void window.glade
       .createTerminal({
+        campId: camp.id,
         cols: terminal.cols,
-        cwd: camp.rootPath,
         rows: terminal.rows,
       })
       .then((session) => {
@@ -140,7 +142,7 @@ export function SessionConsole({ camp }: SessionConsoleProps) {
   }
 
   return (
-    <section className="panel console-panel">
+    <section className={`panel console-panel ${compact ? "console-panel--compact" : ""}`}>
       <div className="panel-header">
         <div>
           <span className="eyebrow">Shell</span>

@@ -1,0 +1,21 @@
+<svg width="196" height="196" viewBox="0 0 196 196" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <radialGradient id="fireGlow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(98 108) rotate(90) scale(60 60)">
+      <stop stop-color="#FFDE8B" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#FFDE8B" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="flame" x1="98" y1="56" x2="98" y2="126" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFF2C7"/>
+      <stop offset="0.45" stop-color="#FFC666"/>
+      <stop offset="1" stop-color="#CF5A22"/>
+    </linearGradient>
+  </defs>
+  <ellipse cx="98" cy="150" rx="44" ry="14" fill="#091109" fill-opacity="0.28"/>
+  <circle cx="98" cy="110" r="42" fill="url(#fireGlow)"/>
+  <path d="M98 56C110 72 124 88 124 106C124 128 111 140 98 140C85 140 72 128 72 106C72 88 84 74 98 56Z" fill="url(#flame)"/>
+  <path d="M97.5 70C103.5 82 112 90 112 104C112 118 104 126 97.5 126C91 126 83 118 83 104C83 91 89 82 97.5 70Z" fill="#FFF4D8" fill-opacity="0.48"/>
+  <rect x="72" y="124" width="56" height="6" rx="3" transform="rotate(24 72 124)" fill="#6D4924"/>
+  <rect x="68" y="126" width="56" height="6" rx="3" transform="rotate(-24 68 126)" fill="#7B5329"/>
+  <circle cx="66" cy="86" r="4" fill="#F5C56E" fill-opacity="0.7"/>
+  <circle cx="136" cy="80" r="3" fill="#F5C56E" fill-opacity="0.5"/>
+</svg>

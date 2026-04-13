@@ -1,0 +1,24 @@
+<svg width="196" height="196" viewBox="0 0 196 196" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="tentCloth" x1="98" y1="48" x2="98" y2="128" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E4D396"/>
+      <stop offset="1" stop-color="#A38642"/>
+    </linearGradient>
+    <linearGradient id="treeTop" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#8DC46D"/>
+      <stop offset="1" stop-color="#33612E"/>
+    </linearGradient>
+  </defs>
+  <ellipse cx="98" cy="154" rx="58" ry="18" fill="#091109" fill-opacity="0.28"/>
+  <ellipse cx="54" cy="102" rx="24" ry="28" fill="url(#treeTop)"/>
+  <rect x="50" y="122" width="8" height="22" rx="3" fill="#5A3B1F"/>
+  <ellipse cx="142" cy="96" rx="22" ry="26" fill="url(#treeTop)"/>
+  <rect x="138" y="114" width="7" height="20" rx="3" fill="#5A3B1F"/>
+  <path d="M78 118L98 52L118 118H78Z" fill="url(#tentCloth)"/>
+  <path d="M98 52L118 118H98V52Z" fill="#B89549" fill-opacity="0.38"/>
+  <path d="M94 118H102V80L98 72L94 80V118Z" fill="#644624"/>
+  <path d="M92 84L86 118H92V84Z" fill="#60411F" fill-opacity="0.35"/>
+  <rect x="122" y="74" width="4" height="44" rx="2" fill="#5A3B1F"/>
+  <path d="M126 74L142 80L126 88V74Z" fill="#E5C36A"/>
+  <ellipse cx="98" cy="122" rx="36" ry="12" fill="#3A602B" fill-opacity="0.22"/>
+</svg>
