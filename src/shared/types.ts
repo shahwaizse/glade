@@ -1,7 +1,54 @@
-export type CampStatus = "active" | "resting" | "untracked";
-export type CampEnvironment = "native" | "wsl";
-export type HostPlatform = "linux" | "macos" | "windows";
-export type CodexMessageRole = "user" | "assistant";
+export type AgentProvider = "codex" | "claude";
+export type CheckSeverity = "pass" | "warn" | "fail";
+export type ConnectorKind = "slack" | "notion";
+export type ProjectStatus = "clean" | "dirty" | "untracked";
+export type WorkItemSource = "manual" | "slack" | "notion";
+export type WorkItemStatus = "inbox" | "ready" | "running" | "review" | "done";
+
+export interface ConnectorConfig {
+  enabled: boolean;
+  scope: string;
+}
+
+export interface ProjectProfile {
+  browserProfile: string;
+  claudeCommand: string;
+  codexCommand: string;
+  expectedIdentity: string;
+  expectedRemote: string;
+  notion: ConnectorConfig;
+  slack: ConnectorConfig;
+  sshKeyPath: string;
+}
+
+export interface ProjectRecord {
+  addedAt: string;
+  id: string;
+  lastOpenedAt: string;
+  name: string;
+  notes: string;
+  profile: ProjectProfile;
+  rootPath: string;
+  workItems: WorkItem[];
+}
+
+export interface WorkItem {
+  acceptanceCriteria: string;
+  createdAt: string;
+  id: string;
+  source: WorkItemSource;
+  sourceUrl: string;
+  status: WorkItemStatus;
+  title: string;
+  updatedAt: string;
+}
+
+export interface PreflightCheck {
+  detail: string;
+  id: string;
+  label: string;
+  severity: CheckSeverity;
+}
 
 export interface WorktreeSummary {
   branch: string;
@@ -9,54 +56,54 @@ export interface WorktreeSummary {
   path: string;
 }
 
-export interface TokenLedger {
-  completion: number;
-  prompt: number;
-  total: number;
-}
-
-export interface CampRecord {
-  addedAt: string;
-  environment: CampEnvironment;
-  id: string;
-  lastOpenedAt: string;
-  name: string;
-  rootPath: string;
-  wslDistro: string | null;
-}
-
-export interface CampOverview extends CampRecord {
+export interface ProjectOverview extends ProjectRecord {
   branch: string;
-  mcpServers: string[];
-  status: CampStatus;
-  tokenLedger: TokenLedger;
+  gitEmail: string;
+  gitName: string;
+  originRemote: string;
+  preflight: PreflightCheck[];
+  status: ProjectStatus;
   worktrees: WorktreeSummary[];
 }
 
-export interface HostRuntimeInfo {
-  defaultWslDistro: string | null;
-  hostPlatform: HostPlatform;
-  isWslHost: boolean;
-  supportedCampEnvironments: CampEnvironment[];
+export interface AppState {
+  activeProjectId: string | null;
+  projects: ProjectRecord[];
 }
 
-export interface CampRegistryState {
-  activeCampId: string | null;
-  camps: CampRecord[];
-  host: HostRuntimeInfo;
-}
-
-export interface CreateCampInput {
-  environment?: CampEnvironment;
+export interface ImportProjectInput {
   name?: string;
   rootPath: string;
-  wslDistro?: string | null;
+}
+
+export interface UpdateProjectInput {
+  id: string;
+  name?: string;
+  notes?: string;
+  profile?: Partial<ProjectProfile>;
+}
+
+export interface CreateWorkItemInput {
+  acceptanceCriteria?: string;
+  projectId: string;
+  source?: WorkItemSource;
+  sourceUrl?: string;
+  title: string;
+}
+
+export interface UpdateWorkItemInput {
+  acceptanceCriteria?: string;
+  id: string;
+  projectId: string;
+  sourceUrl?: string;
+  status?: WorkItemStatus;
+  title?: string;
 }
 
 export interface TerminalSessionSummary {
-  campId: string;
   cwd: string;
   id: string;
+  projectId: string;
   startedAt: string;
 }
 
@@ -71,8 +118,9 @@ export interface TerminalExitEvent {
 }
 
 export interface CreateTerminalInput {
-  campId: string;
+  agent?: AgentProvider | "shell";
   cols?: number;
+  projectId: string;
   rows?: number;
 }
 
@@ -85,56 +133,4 @@ export interface ResizeTerminalInput {
 export interface WriteTerminalInput {
   data: string;
   sessionId: string;
-}
-
-export interface CodexThreadSummary {
-  cwd: string;
-  id: string;
-  messageCount: number;
-  source: string | null;
-  title: string;
-  updatedAt: string;
-}
-
-export interface CodexMessage {
-  id: string;
-  phase: string | null;
-  role: CodexMessageRole;
-  text: string;
-  timestamp: string;
-}
-
-export interface CodexThreadDetail extends CodexThreadSummary {
-  messages: CodexMessage[];
-}
-
-export interface LiveCodexReply {
-  response: string;
-  threadId: string;
-}
-
-export interface SendCodexMessageInput {
-  cwd: string;
-  environment?: CampEnvironment;
-  prompt: string;
-  threadId?: string | null;
-  wslDistro?: string | null;
-}
-
-export interface GladeApi {
-  addCamp: (input: CreateCampInput) => Promise<CampRegistryState>;
-  createTerminal: (input: CreateTerminalInput) => Promise<TerminalSessionSummary>;
-  getCampOverview: (campId?: string) => Promise<CampOverview | null>;
-  getCampRegistry: () => Promise<CampRegistryState>;
-  getCodexThread: (threadId: string) => Promise<CodexThreadDetail | null>;
-  getCodexThreads: (cwd?: string) => Promise<CodexThreadSummary[]>;
-  killTerminal: (sessionId: string) => Promise<void>;
-  onTerminalData: (listener: (event: TerminalDataEvent) => void) => () => void;
-  onTerminalExit: (listener: (event: TerminalExitEvent) => void) => () => void;
-  pickCampDirectory: () => Promise<string | null>;
-  removeCamp: (campId: string) => Promise<CampRegistryState>;
-  resizeTerminal: (input: ResizeTerminalInput) => Promise<void>;
-  sendCodexMessage: (input: SendCodexMessageInput) => Promise<LiveCodexReply>;
-  setActiveCamp: (campId: string) => Promise<CampRegistryState>;
-  writeTerminal: (input: WriteTerminalInput) => Promise<void>;
 }

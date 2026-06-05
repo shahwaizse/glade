@@ -1,94 +1,33 @@
 # Glade
 
-Glade is a fantasy-themed Electron shell for Codex-style development workflows. The long-term goal is to build Glade from within Glade as early as possible, so the first milestone focuses on a practical self-hosting loop rather than heavy game systems.
+Glade is a local-first web app for personal software-factory workflows. It imports existing Git repositories, validates project identity boundaries, keeps project-specific notes and work items, and launches shell, Codex, or Claude Code sessions in the selected project.
 
-## Step 0 POC
+The app is intentionally a normal web app now: run the Node server wherever the projects live. For WSL projects, run Glade inside WSL. For Windows projects, run Glade in Windows.
 
-This iteration includes:
+## Required Local Setup
 
-- an Electron desktop shell
-- a React renderer with a multi-camp layout
-- persisted camp storage between launches
-- importing existing git repositories into the glade
-- an IPC bridge for shell sessions
-- an `xterm` campfire terminal backed by `node-pty`
-- branch and worktree discovery for the selected camp
-- placeholder panels for token telemetry and MCP "merchant" slots
-- groundwork for native and WSL camp execution modes
+Each project should already have:
 
-## Stack
+- a Git repository
+- `git config --local user.name`
+- `git config --local user.email`
+- an `origin` remote
+- preferably `git config --local core.sshCommand "ssh -i /absolute/key -o IdentitiesOnly=yes -F /dev/null"`
+- a known browser profile path or label
 
-- Electron
-- React
-- TypeScript
-- Vite
-- xterm.js
-- node-pty
+Slack and Notion are represented as scoped connector config in this first version. MCP-backed intake comes next.
 
-## Getting started
-
-Install Node.js 20+ first, then:
+## Run
 
 ```bash
 npm install
 npm run dev
 ```
 
-On Ubuntu 24.04, Electron needed these runtime libraries on this machine:
+Open `http://127.0.0.1:5173`.
 
-- `libnss3`
-- `libnspr4`
-- `libasound2t64`
-
-Install them with:
+The API server listens on `http://127.0.0.1:8787` by default. Override with:
 
 ```bash
-sudo apt install libnss3 libnspr4 libasound2t64
+GLADE_PORT=8790 npm run dev
 ```
-
-By default, Glade seeds itself with the repo you launched it from. After that you can import any existing git repo into the camp roster from the UI.
-
-You can still override the seed repo on boot:
-
-```bash
-GLADE_PROJECT_ROOT=/path/to/project npm run dev
-```
-
-## Native Windows Run From WSL
-
-The long-term target is a native Windows Glade app that can still open WSL and Windows repos. This repo now includes a helper script for that flow:
-
-```bash
-./scripts/windows-native.sh start
-```
-
-What it does:
-
-- bootstraps a portable Windows Node toolchain under `C:\Users\<you>\tools` if needed
-- syncs the repo into `C:\Users\<you>\dev\glade-native`
-- installs Windows-side dependencies when they are missing
-- launches the Windows-native Electron app from that mirrored checkout
-
-Other useful commands:
-
-```bash
-./scripts/windows-native.sh build
-./scripts/windows-native.sh dev
-./scripts/windows-native.sh sync
-```
-
-This is the preferred path for performance while the source of truth still lives in WSL.
-
-## Current direction
-
-- The short-term self-hosting goal is to run Glade natively and use it to manage the Glade repo itself.
-- The desired long-term setup is a native Windows Glade app that can open both Windows repos and WSL repos.
-- The current codebase already models camp environments so we can add the Windows-to-WSL bridge without reshaping the app again.
-
-## Near-term roadmap
-
-1. Add richer Windows and WSL execution adapters.
-2. Add better session lifecycle controls and recovery.
-3. Surface real Codex usage telemetry in the ledger.
-4. Add merchant workflows for MCP attachment and inspection.
-5. Build the next Glade features from inside Glade.

@@ -1,6 +1,8 @@
 node_modules
 dist
-dist-electron
-.DS_Store
+dist-server
 *.log
-
+.glade
+.glade.local
+.env
+.env.local
