@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Glade</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <!-- SVG filters for liquid glass (displacement map injected by glass.js) -->
+  <svg class="defs" aria-hidden="true" width="0" height="0">
+    <defs>
+      <filter id="liquid-glass" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+        <feImage id="lg-map" href="" x="0" y="0" width="100%" height="100%" result="map" preserveAspectRatio="none" />
+        <feDisplacementMap in="SourceGraphic" in2="map" scale="28" xChannelSelector="R" yChannelSelector="G" />
+      </filter>
+    </defs>
+  </svg>
+
+  <div id="stage">
+    <!-- ambient background -->
+    <div class="ambient a1"></div>
+    <div class="ambient a2"></div>
+
+    <!-- widget grid -->
+    <main id="grid" class="empty"></main>
+
+    <!-- generation window -->
+    <div id="genwrap" hidden>
+      <div id="genwindow">
+        <div class="gen-scroll">
+          <div class="gen-card c1"></div>
+          <div class="gen-card c2"></div>
+          <div class="gen-card c3"></div>
+          <div class="gen-card c4"></div>
+          <div class="gen-card c1"></div>
+          <div class="gen-card c2"></div>
+        </div>
+        <div class="gen-veil"></div>
+        <div id="genstatus">conjuring…</div>
+      </div>
+    </div>
+
+    <!-- env side panel -->
+    <aside id="envpanel" class="glass" hidden>
+      <h2 id="envtitle">This widget needs a few keys</h2>
+      <form id="envform"></form>
+      <div class="env-actions">
+        <button type="button" id="envsave" class="g-btn primary">Save</button>
+        <button type="button" id="envskip" class="g-btn">Later</button>
+      </div>
+    </aside>
+
+    <!-- command bar -->
+    <div id="dock">
+      <form id="cmd" class="glass">
+        <span class="spark">✦</span>
+        <input id="prompt" type="text" autocomplete="off" spellcheck="false"
+               placeholder="What should Glade become?" />
+        <button type="submit" id="go" aria-label="Send">↵</button>
+      </form>
+      <div id="hint">glade builds its own interface — ask for anything</div>
+    </div>
+  </div>
+
+  <script src="/glass.js"></script>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>

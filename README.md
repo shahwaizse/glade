@@ -1,33 +1,34 @@
-# Glade
+# ✦ Glade
 
-Glade is a local-first web app for personal software-factory workflows. It imports existing Git repositories, validates project identity boundaries, keeps project-specific notes and work items, and launches shell, Codex, or Claude Code sessions in the selected project.
-
-The app is intentionally a normal web app now: run the Node server wherever the projects live. For WSL projects, run Glade inside WSL. For Windows projects, run Glade in Windows.
-
-## Required Local Setup
-
-Each project should already have:
-
-- a Git repository
-- `git config --local user.name`
-- `git config --local user.email`
-- an `origin` remote
-- preferably `git config --local core.sshCommand "ssh -i /absolute/key -o IdentitiesOnly=yes -F /dev/null"`
-- a known browser profile path or label
-
-Slack and Notion are represented as scoped connector config in this first version. MCP-backed intake comes next.
+Glade is an AI harness with a **self-extending interface**. It starts as a black screen with a single liquid-glass input. You type what you want — *"show me all my folders"*, *"a clock for Tokyo"*, *"a widget that tails my nginx logs"* — and Glade's coding harness (Claude Code or Codex) builds the UI widget **and** its backend on the spot, wires them together, and mounts the result live. No reloads, no config, no scaffolding.
 
 ## Run
 
-```bash
-npm install
-npm run dev
+```sh
+node server.js
+# → http://localhost:4173
 ```
 
-Open `http://127.0.0.1:5173`.
+Requires Node 18+ and the `claude` CLI on PATH (or `codex` — set `"harness": "codex"` in `glade.config.json`). Zero npm dependencies.
 
-The API server listens on `http://127.0.0.1:8787` by default. Override with:
+## How it works
 
-```bash
-GLADE_PORT=8790 npm run dev
+1. You submit a request from the command bar. A glowing generation window appears while the harness works.
+2. The server spawns the harness headlessly **inside this folder** with `CLAUDE.md` as its contract: build `web/widgets/<slug>/widget.js` (ES module UI), optionally `backends/<slug>.js` (hot-loaded Node handler exposed at `POST /api/widget/<slug>`), and register both in `web/widgets/manifest.json`.
+3. When the harness finishes, the UI refetches the manifest and mounts the new widget with an entrance animation.
+4. If a widget declares required env vars (API keys) and they're missing from `.env`, a liquid-glass panel slides in from the right with the key names prefilled — paste values, save, and the widget unblocks.
+
+Widgets that only touch your local machine (filesystem, processes, git) need no setup at all — that's the point.
+
+## Layout
+
+```
+server.js                    zero-dep HTTP server + harness runner
+CLAUDE.md                    the contract the harness follows
+glade.config.json            optional: { "harness": "claude" | "codex" }
+web/                         the shell (don't touch — widgets live below)
+web/widgets/manifest.json    widget registry
+web/widgets/<slug>/widget.js widget UI modules (harness-generated)
+backends/<slug>.js           widget backends (harness-generated, hot-loaded)
+.env                         user-supplied secrets (gitignored)
 ```

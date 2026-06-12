@@ -1,34 +1,10 @@
 {
   "name": "glade",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
-  "description": "A local-first software factory for isolated Codex and Claude Code project workflows.",
+  "description": "Glade — an AI harness with a self-extending user interface.",
+  "main": "server.js",
   "scripts": {
-    "dev": "concurrently -k \"tsx watch src/server/index.ts\" \"vite --host 127.0.0.1 --port 5173\"",
-    "build": "npm run build:client && npm run build:server",
-    "build:client": "vite build",
-    "build:server": "tsc -p tsconfig.server.json",
-    "start": "node dist-server/server/index.js"
-  },
-  "dependencies": {
-    "@xterm/addon-fit": "^0.10.0",
-    "@xterm/xterm": "^5.5.0",
-    "express": "^5.2.1",
-    "lucide-react": "^0.556.0",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "ws": "^8.18.3"
-  },
-  "devDependencies": {
-    "@types/express": "^5.0.6",
-    "@types/node": "^24.6.0",
-    "@types/react": "^19.1.2",
-    "@types/react-dom": "^19.1.2",
-    "@types/ws": "^8.18.1",
-    "@vitejs/plugin-react": "^5.0.4",
-    "concurrently": "^9.2.0",
-    "tsx": "^4.21.0",
-    "typescript": "^5.8.3",
-    "vite": "^7.0.0"
+    "start": "node server.js"
   }
 }

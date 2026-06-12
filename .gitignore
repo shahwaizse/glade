@@ -1,8 +1,2 @@
-node_modules
-dist
-dist-server
-*.log
-.glade
-.glade.local
+node_modules/
 .env
-.env.local

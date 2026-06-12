@@ -1,0 +1,5 @@
+{
+  "widgets": [
+    { "slug": "file-explorer", "title": "File Explorer", "size": "medium", "env": [] }
+  ]
+}
