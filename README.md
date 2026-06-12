@@ -23,6 +23,10 @@ The server runs the harness headlessly inside this folder. `CLAUDE.md` is its co
 
 ![widgets](docs/widget.png)
 
+It isn't limited to widgets. Ask for something weirder — *"make a game engine and show a walking character walking around the widgets"* — and the harness extends Glade's own shell: an isometric world grows under the grid, the widgets become places, and you hop between them with WASD.
+
+![game](docs/game.png)
+
 If a widget needs an API key, a panel slides in asking for just that value — keys prefilled, paste and go. Widgets that only touch your machine (files, processes, git) need nothing at all.
 
 ## Layout
