@@ -5,6 +5,10 @@
   "description": "Glade — an AI harness with a self-extending user interface.",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node test/smoke.mjs && node test/ui.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.61.0"
   }
 }

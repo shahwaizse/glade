@@ -2,3 +2,7 @@ node_modules/
 .env
 backends/
 web/widgets/
+uploads/
+glade.config.json
+test/shot.png
+test/fixture.png
