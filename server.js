@@ -49,6 +49,10 @@ function loadConfig() {
   return Object.assign(
     {
       harness: "claude",
+      // Ordered failover chain. When the active harness reports a usage/rate
+      // limit, Glade re-runs the request on the next harness in this list,
+      // carrying over the work already on disk. Override in glade.config.json.
+      harnessFallback: ["claude", "codex"],
       harnessArgs: {
         claude: [
           "-p",
@@ -85,12 +89,12 @@ function writeEnvFile(updates) {
   return env;
 }
 
-function readBody(req) {
+function readBody(req, max = 5e6) {
   return new Promise((resolve, reject) => {
     let data = "";
     req.on("data", (c) => {
       data += c;
-      if (data.length > 5e6) reject(new Error("body too large"));
+      if (data.length > max) reject(new Error("body too large"));
     });
     req.on("end", () => resolve(data));
     req.on("error", reject);
@@ -112,20 +116,128 @@ const HARNESS_PROMPT_PREFIX = `You are running inside Glade, a self-extending UI
 
 User request: `;
 
-function runHarness(prompt, res) {
+// Signals that a harness has run out of usage/quota and we should fail over.
+const LIMIT_RE =
+  /usage limit|rate.?limit|\b429\b|too many requests|quota|exceeded your|limit reached|insufficient[_ ]quota|out of credit|credit balance|overloaded/i;
+
+// Ordered list of harness commands to try. The active harness comes first,
+// then any remaining configured harnesses (explicit `harnessFallback` wins).
+function harnessChain(config) {
+  if (Array.isArray(config.harnessFallback) && config.harnessFallback.length) {
+    return config.harnessFallback.filter((h) => (config.harnessArgs || {})[h] !== undefined || true);
+  }
+  const first = config.harness;
+  const rest = Object.keys(config.harnessArgs || {}).filter((h) => h !== first);
+  return [first, ...rest];
+}
+
+// Build the full prompt for a single attempt: shell instructions + the user
+// request, any attached image paths, and (on failover) a note that a previous
+// harness left partial work on disk to continue from.
+function buildPrompt(userRequest, imagePaths, priorHarness) {
+  let prompt = HARNESS_PROMPT_PREFIX + userRequest;
+  if (imagePaths && imagePaths.length) {
+    prompt +=
+      `\n\nThe user attached ${imagePaths.length} image(s). Read them with your file tools before building, ` +
+      `treating them as part of the request (a design to match, a screenshot, data to extract, etc.):\n` +
+      imagePaths.map((p) => "  " + p).join("\n");
+  }
+  if (priorHarness) {
+    prompt =
+      `NOTE: The "${priorHarness}" harness started this task but hit its usage limit before finishing. ` +
+      `Its partial work is already on disk in this repo — inspect the current widget/backend/manifest state ` +
+      `first and CONTINUE from there to completion rather than starting over.\n\n` + prompt;
+  }
+  return prompt;
+}
+
+// Does a single stdout line (or stderr text) indicate a usage limit?
+// Assistant "thoughts" are ignored so a widget *about* rate limiting can't
+// trip a false failover — only result/error events and raw logs are scanned.
+function lineSignalsLimit(line) {
+  let ev;
+  try {
+    ev = JSON.parse(line);
+  } catch {
+    return LIMIT_RE.test(line);
+  }
+  if (ev.type === "result") {
+    return LIMIT_RE.test(`${ev.subtype || ""} ${ev.result || ""} ${ev.error || ""}`);
+  }
+  if (ev.type === "error") {
+    return LIMIT_RE.test(JSON.stringify(ev.error || ev));
+  }
+  return false; // assistant / system / tool events never trigger a switch
+}
+
+// Decode base64 data-URL images from a generate request, write them under
+// uploads/, and return their absolute paths for the harness to read.
+function saveImages(images) {
+  if (!Array.isArray(images) || !images.length) return [];
+  const dir = path.join(ROOT, "uploads");
+  fs.mkdirSync(dir, { recursive: true });
+  const extByMime = {
+    "image/png": "png", "image/jpeg": "jpg", "image/jpg": "jpg",
+    "image/webp": "webp", "image/gif": "gif", "image/svg+xml": "svg",
+  };
+  const saved = [];
+  images.forEach((img, i) => {
+    const data = typeof img === "string" ? img : img && img.data;
+    const m = /^data:(image\/[a-z0-9.+-]+);base64,(.+)$/i.exec(data || "");
+    if (!m) return;
+    const ext = extByMime[m[1].toLowerCase()] || "png";
+    const file = path.join(dir, `glade-${Date.now()}-${i}.${ext}`);
+    fs.writeFileSync(file, Buffer.from(m[2], "base64"));
+    saved.push(file);
+  });
+  return saved;
+}
+
+// Run the request against the fallback chain, automatically switching to the
+// next harness if the current one reports a usage limit.
+function runHarness(userRequest, imagePaths, res) {
   const config = loadConfig();
-  const harness = config.harness;
-  const args = [...(config.harnessArgs[harness] || [])];
-  // claude takes the prompt after -p; codex exec takes it as final arg
-  args.push(HARNESS_PROMPT_PREFIX + prompt);
+  const chain = harnessChain(config);
 
   res.writeHead(200, {
     "Content-Type": "application/x-ndjson; charset=utf-8",
     "Cache-Control": "no-cache",
     "X-Accel-Buffering": "no",
   });
-
   const emit = (obj) => res.write(JSON.stringify(obj) + "\n");
+
+  let idx = 0;
+  let priorHarness = null;
+
+  const runNext = () => {
+    if (idx >= chain.length) {
+      emit({ type: "error", message: "All harnesses are at their usage limit — try again later." });
+      return res.end();
+    }
+    const harness = chain[idx];
+
+    runAttempt(harness, buildPrompt(userRequest, imagePaths, priorHarness), config, emit, res, (outcome) => {
+      if (outcome === "limit") {
+        const next = chain[idx + 1];
+        if (next) {
+          emit({ type: "switch", from: harness, to: next, reason: "usage limit reached" });
+          priorHarness = harness;
+          idx += 1;
+          return runNext();
+        }
+        emit({ type: "error", message: `${harness} hit its usage limit and no fallback harness is configured.` });
+        return res.end();
+      }
+      res.end();
+    });
+  };
+
+  runNext();
+}
+
+// Spawn one harness attempt. Calls done("limit" | "done" | "error") exactly once.
+function runAttempt(harness, fullPrompt, config, emit, res, done) {
+  const args = [...((config.harnessArgs || {})[harness] || []), fullPrompt];
   emit({ type: "start", harness });
 
   let child;
@@ -137,12 +249,26 @@ function runHarness(prompt, res) {
     });
   } catch (err) {
     emit({ type: "error", message: `failed to spawn ${harness}: ${err.message}` });
-    return res.end();
+    return done("error");
   }
+
+  let limitHit = false;
+  let settled = false;
+  const finish = (outcome) => {
+    if (settled) return;
+    settled = true;
+    done(outcome);
+  };
+  const flagLimit = () => {
+    if (limitHit) return;
+    limitHit = true;
+    emit({ type: "log", text: `${harness} signalled a usage limit; failing over…` });
+    if (child.exitCode === null) child.kill("SIGTERM"); // stop early so we can switch
+  };
 
   child.on("error", (err) => {
     emit({ type: "error", message: `harness error: ${err.message}` });
-    res.end();
+    finish(limitHit ? "limit" : "error");
   });
 
   let buf = "";
@@ -153,15 +279,17 @@ function runHarness(prompt, res) {
       const line = buf.slice(0, nl).trim();
       buf = buf.slice(nl + 1);
       if (!line) continue;
-      forwardHarnessLine(line, emit);
+      if (lineSignalsLimit(line)) flagLimit();
+      else if (!limitHit) forwardHarnessLine(line, emit);
     }
   });
   child.stderr.on("data", (chunk) => {
-    emit({ type: "log", text: chunk.toString().slice(0, 2000) });
+    const text = chunk.toString();
+    if (LIMIT_RE.test(text)) flagLimit();
+    emit({ type: "log", text: text.slice(0, 2000) });
   });
-  child.on("close", (code) => {
-    emit({ type: "done", code });
-    res.end();
+  child.on("close", () => {
+    finish(limitHit ? "limit" : "done");
   });
   res.on("close", () => {
     if (child.exitCode === null) child.kill("SIGTERM");
@@ -249,9 +377,11 @@ const server = http.createServer(async (req, res) => {
     if (p === "/api/state" && req.method === "GET") return getState(res);
 
     if (p === "/api/generate" && req.method === "POST") {
-      const { prompt } = JSON.parse((await readBody(req)) || "{}");
-      if (!prompt || !prompt.trim()) return sendJSON(res, 400, { error: "empty prompt" });
-      return runHarness(prompt.trim(), res);
+      const { prompt, images } = JSON.parse((await readBody(req, 30e6)) || "{}");
+      const imagePaths = saveImages(images);
+      if ((!prompt || !prompt.trim()) && !imagePaths.length)
+        return sendJSON(res, 400, { error: "empty prompt" });
+      return runHarness((prompt || "").trim() || "(see attached image)", imagePaths, res);
     }
 
     if (p === "/api/env" && req.method === "POST") {

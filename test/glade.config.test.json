@@ -1,0 +1,5 @@
+{
+  "harness": "mock-limit",
+  "harnessFallback": ["mock-limit", "mock-ok"],
+  "harnessArgs": { "mock-limit": [], "mock-ok": [] }
+}

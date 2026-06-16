@@ -9,9 +9,13 @@ const genstatus = document.getElementById("genstatus");
 const envpanel = document.getElementById("envpanel");
 const envform = document.getElementById("envform");
 const envtitle = document.getElementById("envtitle");
+const attachBtn = document.getElementById("attach");
+const imgInput = document.getElementById("imgfile");
+const thumbs = document.getElementById("thumbs");
 
 const mounted = new Map(); // slug -> { def, el }
 let generating = false;
+const attached = []; // { name, dataUrl } images queued for the next prompt
 
 // ---------- state / widgets ----------
 
@@ -146,6 +150,85 @@ document.getElementById("envsave").onclick = async () => {
 };
 document.getElementById("envskip").onclick = closeEnvPanel;
 
+// ---------- image attachments ----------
+
+const MAX_DIM = 1568;        // downscale longest edge — plenty for vision models
+const MAX_ATTACHED = 6;
+
+// Read a File, downscale if large, return a data URL.
+function loadImage(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("could not read file"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("not an image"));
+      img.onload = () => {
+        const scale = Math.min(1, MAX_DIM / Math.max(img.width, img.height));
+        if (scale === 1 && reader.result.length < 1.5e6) return resolve(reader.result);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, Math.round(img.width * scale));
+        canvas.height = Math.max(1, Math.round(img.height * scale));
+        canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+        const type = file.type === "image/png" ? "image/png" : "image/jpeg";
+        resolve(canvas.toDataURL(type, 0.9));
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+async function addFiles(files) {
+  for (const file of files) {
+    if (!file.type.startsWith("image/")) continue;
+    if (attached.length >= MAX_ATTACHED) break;
+    try {
+      attached.push({ name: file.name || "pasted-image", dataUrl: await loadImage(file) });
+    } catch {}
+  }
+  renderThumbs();
+}
+
+function renderThumbs() {
+  thumbs.innerHTML = "";
+  thumbs.hidden = attached.length === 0;
+  attached.forEach((a, i) => {
+    const t = document.createElement("div");
+    t.className = "thumb";
+    const img = document.createElement("img");
+    img.src = a.dataUrl;
+    img.alt = a.name;
+    const x = document.createElement("button");
+    x.type = "button";
+    x.className = "thumb-x";
+    x.textContent = "✕";
+    x.title = "Remove";
+    x.onclick = () => { attached.splice(i, 1); renderThumbs(); };
+    t.append(img, x);
+    thumbs.appendChild(t);
+  });
+}
+
+attachBtn.onclick = () => imgInput.click();
+imgInput.onchange = () => { addFiles(imgInput.files); imgInput.value = ""; };
+
+document.addEventListener("paste", (e) => {
+  const files = [...(e.clipboardData?.items || [])]
+    .filter((it) => it.kind === "file" && it.type.startsWith("image/"))
+    .map((it) => it.getAsFile())
+    .filter(Boolean);
+  if (files.length) { e.preventDefault(); addFiles(files); }
+});
+
+stage.addEventListener("dragover", (e) => { e.preventDefault(); stage.classList.add("dropping"); });
+stage.addEventListener("dragleave", (e) => { if (e.target === stage) stage.classList.remove("dropping"); });
+stage.addEventListener("drop", (e) => {
+  e.preventDefault();
+  stage.classList.remove("dropping");
+  if (e.dataTransfer?.files?.length) addFiles(e.dataTransfer.files);
+});
+
 // ---------- generation ----------
 
 const VERBS = ["conjuring", "weaving", "growing", "shaping", "summoning"];
@@ -153,8 +236,11 @@ const VERBS = ["conjuring", "weaving", "growing", "shaping", "summoning"];
 cmd.addEventListener("submit", async (e) => {
   e.preventDefault();
   const prompt = promptEl.value.trim();
-  if (!prompt || generating) return;
+  if ((!prompt && attached.length === 0) || generating) return;
   generating = true;
+  const images = attached.map((a) => ({ name: a.name, data: a.dataUrl }));
+  attached.length = 0;
+  renderThumbs();
   promptEl.value = "";
   promptEl.blur();
 
@@ -166,7 +252,7 @@ cmd.addEventListener("submit", async (e) => {
     const res = await fetch("/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt }),
+      body: JSON.stringify({ prompt, images }),
     });
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
@@ -186,6 +272,8 @@ cmd.addEventListener("submit", async (e) => {
             genstatus.textContent = `${ev.name.toLowerCase()} · ${ev.detail || ""}`;
           } else if (ev.type === "thought") {
             genstatus.textContent = ev.text;
+          } else if (ev.type === "switch") {
+            genstatus.textContent = `⤳ ${ev.from} hit its limit — switching to ${ev.to}…`;
           } else if (ev.type === "result") {
             finalText = ev.text;
           } else if (ev.type === "error") {
