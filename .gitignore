@@ -4,5 +4,6 @@ backends/
 web/widgets/
 uploads/
 glade.config.json
+.glade/
 test/shot.png
 test/fixture.png

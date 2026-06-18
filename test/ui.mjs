@@ -97,11 +97,12 @@ async function main() {
       ? ok("browser received the harness-switch event (mock-limit → mock-ok)")
       : fail(`no switch event in stream: ${JSON.stringify(events.map((e) => e.type))}`);
 
-    // The outbound request must carry the image payload.
+    // The outbound request must carry the attachment payload.
     const req = requests[0];
-    req && Array.isArray(req.images) && req.images.length === 1 && /^data:image\//.test(req.images[0].data)
+    const att = req && (req.attachments || req.images);
+    att && Array.isArray(att) && att.length === 1 && /^data:image\//.test(att[0].data)
       ? ok("generate request included the attached image data")
-      : fail(`generate request missing image payload: ${JSON.stringify(req && Object.keys(req))}`);
+      : fail(`generate request missing attachment payload: ${JSON.stringify(req && Object.keys(req))}`);
 
     // The fallback harness confirms it saw the image path, end to end in the UI.
     const finalStatus = await page.evaluate(() => document.getElementById("genstatus").textContent);

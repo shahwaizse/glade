@@ -1,4 +1,4 @@
-# ✦ Glade
+# Glade
 
 A UI that builds itself. Glade starts as a black screen with one input. Describe what you want — a file explorer, a weather card, a pomodoro timer — and a coding harness (Claude Code or Codex) writes the widget, writes its backend, wires them up, and mounts it live. No reloads, no scaffolding, no config.
 

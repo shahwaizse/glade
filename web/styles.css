@@ -207,34 +207,58 @@ html, body {
   50%       { box-shadow: 0 0 0 1px rgba(255,255,255,0.14), 0 0 90px rgba(255,255,255,0.18), 0 0 180px rgba(200,220,255,0.14), 0 30px 90px rgba(0,0,0,0.85); }
 }
 
-/* TV images — each fills the full window, blinks in/out independently */
-.gen-strips {
-  position: absolute; inset: 0;
+/* Aurora — a slow drifting nebula behind the live build feed */
+.gen-aurora {
+  position: absolute; inset: -40%;
+  background:
+    radial-gradient(40% 40% at 30% 30%, rgba(120,180,255,0.30), transparent 70%),
+    radial-gradient(45% 45% at 70% 60%, rgba(190,140,255,0.26), transparent 70%),
+    radial-gradient(35% 35% at 55% 80%, rgba(120,255,210,0.20), transparent 70%);
+  filter: blur(38px) saturate(1.3);
+  animation: aurora-drift 14s ease-in-out infinite alternate;
 }
-.gen-strip {
-  position: absolute; inset: 0;
-  opacity: 0;
-  animation: strip-blink var(--dur, 3s) ease-in-out infinite;
-  animation-delay: var(--delay, 0s);
+@keyframes aurora-drift {
+  0%   { transform: translate(-4%, -3%) rotate(0deg) scale(1.05); }
+  100% { transform: translate(5%, 4%) rotate(8deg) scale(1.15); }
 }
-.gen-strip img {
-  width: 100%; height: 100%;
-  object-fit: cover;
-  display: block;
-  filter: blur(var(--blur, 12px)) saturate(1.3) brightness(0.85);
+
+/* Live feed — the harness's actual work accreting in real time */
+#genfeed {
+  position: absolute;
+  left: 0; right: 0; top: 0; bottom: 52px;
+  padding: 22px 26px;
+  display: flex; flex-direction: column; justify-content: flex-end;
+  gap: 6px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, #000 22%, #000 100%);
+          mask-image: linear-gradient(180deg, transparent 0%, #000 22%, #000 100%);
 }
-@keyframes strip-blink {
-  0%, 100% { opacity: 0; }
-  25%, 75%  { opacity: 1; }
+.feed-row {
+  display: flex; align-items: baseline; gap: 10px;
+  font-size: 12.5px; line-height: 1.45;
+  color: rgba(255,255,255,0.62);
+  animation: feed-in 0.4s ease;
+  white-space: nowrap; overflow: hidden;
 }
+.feed-row .feed-text { overflow: hidden; text-overflow: ellipsis; }
+.feed-glyph { flex: 0 0 auto; width: 16px; text-align: center; color: rgba(255,255,255,0.4); }
+.feed-tool   { color: rgba(190,225,255,0.85); font-family: ui-monospace, monospace; font-size: 12px; }
+.feed-tool .feed-glyph { color: var(--accent); }
+.feed-thought { color: rgba(255,255,255,0.7); font-style: italic; }
+.feed-switch { color: #ffd28a; }
+.feed-error  { color: #ff9a9a; }
+.feed-result { color: #b7f7c0; }
+.feed-start  { color: rgba(255,255,255,0.45); }
+@keyframes feed-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 .gen-veil {
   position: absolute; inset: 0;
   background: linear-gradient(180deg,
-    rgba(0,0,0,0.5) 0%,
-    rgba(0,0,0,0.05) 30%,
-    rgba(0,0,0,0.05) 70%,
-    rgba(0,0,0,0.5) 100%);
+    rgba(0,0,0,0.55) 0%,
+    rgba(0,0,0,0.15) 24%,
+    rgba(0,0,0,0.15) 70%,
+    rgba(0,0,0,0.6) 100%);
+  pointer-events: none;
 }
 
 #genstatus {
@@ -374,3 +398,124 @@ html, body {
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* ============ Dock extras: mic, harness pill, dockbar ============ */
+
+#mic {
+  flex: 0 0 auto;
+  width: 34px; height: 34px;
+  border-radius: 50%; border: 0;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--ink-dim);
+  font-size: 15px; cursor: pointer;
+  display: grid; place-items: center;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+}
+#mic:hover { background: rgba(255,255,255,0.14); color: var(--ink); }
+#mic.on { background: rgba(255,90,90,0.3); color: #fff; box-shadow: 0 0 18px rgba(255,90,90,0.5); animation: mic-pulse 1.2s ease-in-out infinite; }
+@keyframes mic-pulse { 50% { box-shadow: 0 0 26px rgba(255,90,90,0.8); } }
+
+#dockbar {
+  display: flex; align-items: center; gap: 12px;
+  margin-top: 12px;
+  padding: 0 6px;
+}
+#dockbar #hint {
+  margin: 0; flex: 1; text-align: center;
+  opacity: 0.55;
+}
+#stage:not(.empty-state) #dockbar #hint { opacity: 0; }
+.pill {
+  flex: 0 0 auto;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.05);
+  color: var(--ink-dim);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font: inherit; font-size: 11.5px; letter-spacing: 0.03em;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, box-shadow 0.2s;
+}
+.pill:hover { background: rgba(255,255,255,0.12); color: var(--ink); box-shadow: 0 0 16px var(--accent-glow); }
+#harnesspill::before { content: "⟐ "; color: var(--accent); }
+
+/* ============ File-attachment chips ============ */
+.thumb-file {
+  width: 100%; height: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 2px;
+  background: rgba(255,255,255,0.06);
+  color: var(--ink);
+  padding: 4px;
+}
+.tf-glyph { font-size: 17px; line-height: 1; font-family: ui-monospace, monospace; }
+.tf-name { font-size: 8px; color: var(--ink-dim); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ============ Draggable widgets ============ */
+.widget-head { cursor: default; }
+.drag-dot {
+  color: var(--ink-dim); opacity: 0; cursor: grab;
+  font-size: 12px; letter-spacing: -2px; user-select: none;
+  transition: opacity 0.2s;
+}
+.widget:hover .drag-dot { opacity: 0.5; }
+.drag-dot:hover { opacity: 1; }
+.widget.dragging { opacity: 0.5; outline: 1px dashed rgba(255,255,255,0.3); }
+.widget[data-core="1"] .widget-title::after { content: " · core"; color: var(--ink-dim); font-weight: 400; }
+
+/* ============ Command palette ============ */
+#palette[hidden] { display: none; }
+#palette {
+  position: absolute; inset: 0; z-index: 60;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding-top: 18vh;
+  background: rgba(0,0,0,0.4);
+  backdrop-filter: blur(6px);
+  opacity: 0; transition: opacity 0.25s;
+}
+#palette.on { opacity: 1; }
+#palettebox {
+  width: min(560px, 90vw);
+  padding: 14px;
+  border-radius: 18px;
+  transform: translateY(-10px) scale(0.98);
+  transition: transform 0.3s cubic-bezier(0.2,1.1,0.3,1);
+}
+#palette.on #palettebox { transform: none; }
+#palinput { font-size: 16px; margin-bottom: 8px; }
+#pallist { max-height: 46vh; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.pal-row {
+  display: flex; align-items: baseline; gap: 12px;
+  padding: 10px 12px; border-radius: 12px; cursor: pointer;
+}
+.pal-row .pal-label { flex: 1; font-size: 14px; }
+.pal-row .pal-hint { font-size: 11.5px; color: var(--ink-dim); }
+.pal-row.active, .pal-row:hover { background: rgba(255,255,255,0.1); }
+
+/* ============ Flash toast + modal ============ */
+#flash {
+  position: absolute; top: 22px; left: 50%;
+  transform: translateX(-50%) translateY(-16px);
+  padding: 10px 18px; border-radius: 999px;
+  font-size: 13px; z-index: 70;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.3s, transform 0.4s cubic-bezier(0.2,1.1,0.3,1);
+}
+#flash.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+.modal-wrap {
+  position: absolute; inset: 0; z-index: 65;
+  display: grid; place-items: center;
+  background: rgba(0,0,0,0.45); backdrop-filter: blur(6px);
+  opacity: 0; transition: opacity 0.25s;
+}
+.modal-wrap.on { opacity: 1; }
+.modal {
+  width: min(360px, 88vw); padding: 26px;
+  text-align: center; border-radius: 20px;
+}
+.modal h2 { margin: 0 0 16px; font-size: 16px; font-weight: 600; }
+.modal .qr { width: 200px; height: 200px; border-radius: 12px; background: #fff; padding: 8px; }
+.share-urls { display: flex; flex-direction: column; gap: 6px; margin: 16px 0; }
+.share-urls code { font-size: 12px; color: var(--ink-dim); }
+.modal-close { margin-top: 8px; }

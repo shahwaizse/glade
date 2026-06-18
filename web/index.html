@@ -5,6 +5,35 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Glade</title>
   <link rel="stylesheet" href="/styles.css" />
+
+  <!--
+    Construct menu: version-pinned, no-build ESM leaf libraries the harness may
+    reach for (documented in CLAUDE.md). These are libraries you *call* — they
+    don't impose a framework. Import on demand inside a widget, e.g.
+      const THREE = await import("three");
+    Pinned exact; mirror locally if you need offline.
+  -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://esm.sh/three@0.160.0",
+      "three/": "https://esm.sh/three@0.160.0/",
+      "d3": "https://esm.sh/d3@7.9.0",
+      "chart.js": "https://esm.sh/chart.js@4.4.7/auto",
+      "marked": "https://esm.sh/marked@15.0.0",
+      "dompurify": "https://esm.sh/dompurify@3.2.3",
+      "maplibre-gl": "https://esm.sh/maplibre-gl@4.7.1",
+      "uplot": "https://esm.sh/uplot@1.6.30",
+      "qrcode": "https://esm.sh/qrcode@1.5.4",
+      "codemirror": "https://esm.sh/codemirror@6.0.1",
+      "@codemirror/state": "https://esm.sh/@codemirror/state@6.4.1",
+      "@codemirror/view": "https://esm.sh/@codemirror/view@6.34.1",
+      "@codemirror/lang-javascript": "https://esm.sh/@codemirror/lang-javascript@6.2.2",
+      "@xterm/xterm": "https://esm.sh/@xterm/xterm@5.5.0",
+      "@xterm/addon-fit": "https://esm.sh/@xterm/addon-fit@0.10.0"
+    }
+  }
+  </script>
 </head>
 <body>
   <!-- SVG filters for liquid glass (displacement map injected by glass.js) -->
@@ -25,17 +54,11 @@
     <!-- widget grid -->
     <main id="grid" class="empty"></main>
 
-    <!-- generation window -->
+    <!-- generation window — a live feed of the harness actually working -->
     <div id="genwrap" hidden>
       <div id="genwindow">
-        <div class="gen-strips">
-          <div class="gen-strip" style="--dur:3.4s;--delay:-0.3s;--blur:14px"><img src="/gen-images/1.jpg" alt="" /></div>
-          <div class="gen-strip" style="--dur:2.7s;--delay:-1.8s;--blur:20px"><img src="/gen-images/2.jpg" alt="" /></div>
-          <div class="gen-strip" style="--dur:4.1s;--delay:-0.9s;--blur:11px"><img src="/gen-images/3.jpg" alt="" /></div>
-          <div class="gen-strip" style="--dur:3.0s;--delay:-2.4s;--blur:16px"><img src="/gen-images/4.jpg" alt="" /></div>
-          <div class="gen-strip" style="--dur:2.4s;--delay:-0.6s;--blur:22px"><img src="/gen-images/5.jpg" alt="" /></div>
-          <div class="gen-strip" style="--dur:3.8s;--delay:-1.4s;--blur:13px"><img src="/gen-images/6.jpg" alt="" /></div>
-        </div>
+        <div class="gen-aurora"></div>
+        <div id="genfeed"></div>
         <div class="gen-veil"></div>
         <div id="genstatus">conjuring…</div>
       </div>
@@ -51,17 +74,30 @@
       </div>
     </aside>
 
+    <!-- command palette -->
+    <div id="palette" hidden>
+      <div id="palettebox" class="glass">
+        <input id="palinput" class="g-input" placeholder="Type a command…" autocomplete="off" spellcheck="false" />
+        <div id="pallist"></div>
+      </div>
+    </div>
+
     <!-- command bar -->
     <div id="dock">
       <div id="thumbs" hidden></div>
       <form id="cmd" class="glass">
-        <button type="button" id="attach" aria-label="Attach image" title="Attach image (or paste / drop)">＋</button>
-        <input id="imgfile" type="file" accept="image/*" multiple hidden />
+        <button type="button" id="attach" aria-label="Attach file" title="Attach anything (or paste / drop)">＋</button>
+        <input id="imgfile" type="file" multiple hidden />
         <input id="prompt" type="text" autocomplete="off" spellcheck="false"
                placeholder="What should Glade become?" />
+        <button type="button" id="mic" aria-label="Speak" title="Hold to speak">🎙</button>
         <button type="submit" id="go" aria-label="Send">↵</button>
       </form>
-      <div id="hint">glade builds its own interface — ask for anything</div>
+      <div id="dockbar">
+        <button type="button" id="harnesspill" class="pill" title="Switch harness">claude</button>
+        <span id="hint">glade builds its own interface — ask for anything</span>
+        <button type="button" id="palettebtn" class="pill" title="Commands ( / )">／ commands</button>
+      </div>
     </div>
   </div>
 
