@@ -291,6 +291,7 @@ html, body {
 .widget {
   display: flex; flex-direction: column;
   min-height: 180px;
+  align-self: start;            /* size to own content, don't stretch to row height */
   border-radius: var(--radius);
   animation: widget-in 0.8s cubic-bezier(0.2, 1.1, 0.3, 1);
 }
@@ -323,7 +324,7 @@ html, body {
 }
 .widget-close:hover { color: var(--ink); background: rgba(255,255,255,0.08); }
 
-.widget-body { flex: 1; padding: 4px 18px 18px; overflow: auto; position: relative; }
+.widget-body { flex: 1; min-height: 0; padding: 4px 18px 18px; overflow: hidden; position: relative; }
 .widget-body.error { color: #ff9a9a; font-size: 13px; white-space: pre-wrap; }
 
 .widget.needs-env .widget-body { filter: blur(2px); opacity: 0.5; pointer-events: none; }
