@@ -40,7 +40,15 @@
 
     <!-- generation window — a live feed of the harness actually working -->
     <div id="genwrap" hidden>
-      <div id="genwindow">
+      <button type="button" id="genrestore" class="gen-restore" aria-label="Show build progress" title="Show build progress">
+        <span class="mini-flame" aria-hidden="true">
+          <span class="mini-flame-back"></span>
+          <span class="mini-flame-mid"></span>
+          <span class="mini-flame-front"></span>
+        </span>
+      </button>
+      <div id="genwindow" role="dialog" aria-label="Build progress">
+        <button type="button" id="genclose" class="gen-close" aria-label="Hide build progress" title="Hide build progress"></button>
         <div class="flame-loader" aria-hidden="true">
           <span class="flame flame-back"></span>
           <span class="flame flame-mid"></span>

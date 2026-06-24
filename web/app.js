@@ -7,6 +7,8 @@ const grid = document.getElementById("grid");
 const cmd = document.getElementById("cmd");
 const promptEl = document.getElementById("prompt");
 const genwrap = document.getElementById("genwrap");
+const genclose = document.getElementById("genclose");
+const genrestore = document.getElementById("genrestore");
 const genstatus = document.getElementById("genstatus");
 const genfeed = document.getElementById("genfeed");
 const flameLoader = document.querySelector(".flame-loader");
@@ -81,6 +83,7 @@ function renderHarnessButton() {
 setIconButton(attachBtn, "plus", "Attach file");
 setIconButton(micBtn, "mic", "Start voice input");
 setIconButton(document.getElementById("go"), "send", "Send prompt");
+setIconButton(genclose, "x", "Hide build progress");
 palettebtn.innerHTML = `<span class="slash-mark" aria-hidden="true">/</span><span class="palette-label">Commands</span>`;
 freeformModeBtn.innerHTML = `${icon("panels")}<span>Free</span>`;
 snapModeBtn.innerHTML = `${icon("layout")}<span>Snap</span>`;
@@ -765,6 +768,30 @@ stage.addEventListener("drop", (e) => {
 const VERBS = ["igniting", "kindling", "stoking", "forging", "shaping"];
 const TOOL_GLYPH = { Write: "W", Edit: "E", Read: "R", Bash: "$", Grep: "G", Glob: "G", exec: "$" };
 
+function minimizeBuild() {
+  if (genwrap.hidden || !genwrap.classList.contains("on")) return;
+  genwrap.classList.add("minimized");
+}
+
+function restoreBuild() {
+  if (genwrap.hidden) return;
+  genwrap.classList.remove("minimized");
+}
+
+genclose?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  minimizeBuild();
+});
+
+genrestore?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  restoreBuild();
+});
+
+genwrap.addEventListener("click", (e) => {
+  if (e.target === genwrap) minimizeBuild();
+});
+
 function ensureEasterEgg() {
   let egg = document.getElementById("golden-freddy");
   if (egg) return egg;
@@ -838,6 +865,7 @@ async function generate(prompt, images) {
   genfeed.innerHTML = "";
   genstatus.textContent = `${VERBS[Math.floor(Math.random() * VERBS.length)]} build`;
   genwrap.hidden = false;
+  genwrap.classList.remove("minimized");
   requestAnimationFrame(() => genwrap.classList.add("on"));
 
   try {
@@ -890,7 +918,10 @@ async function generate(prompt, images) {
   await loadState();
   setTimeout(() => {
     genwrap.classList.remove("on");
-    setTimeout(() => (genwrap.hidden = true), 800);
+    setTimeout(() => {
+      genwrap.classList.remove("minimized");
+      genwrap.hidden = true;
+    }, 800);
     generating = false;
   }, 1400);
 }
