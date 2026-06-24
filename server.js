@@ -322,15 +322,18 @@ User request: `;
 const LIMIT_RE =
   /usage limit|rate.?limit|\b429\b|too many requests|quota|exceeded your|limit reached|insufficient[_ ]quota|out of credit|credit balance|overloaded/i;
 
-// Ordered list of harness commands to try. The active harness comes first,
-// then any remaining configured harnesses (explicit `harnessFallback` wins).
+// Ordered list of harness commands to try. The active harness always goes
+// first; the fallback list only decides what to try after that.
 function harnessChain(config) {
-  if (Array.isArray(config.harnessFallback) && config.harnessFallback.length) {
-    return config.harnessFallback.filter((h) => (config.harnessArgs || {})[h] !== undefined || true);
-  }
-  const first = config.harness;
-  const rest = Object.keys(config.harnessArgs || {}).filter((h) => h !== first);
-  return [first, ...rest];
+  const configured = Array.isArray(config.harnessFallback) ? config.harnessFallback.filter(Boolean) : [];
+  const available = Object.keys(config.harnessArgs || {});
+  const first = config.harness || configured[0] || available[0] || "claude";
+  const chain = [
+    first,
+    ...configured.filter((h) => h !== first),
+    ...available.filter((h) => h !== first && !configured.includes(h)),
+  ];
+  return [...new Set(chain)].filter(Boolean);
 }
 
 // Build the full prompt for a single attempt: shell instructions + the user

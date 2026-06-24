@@ -103,6 +103,22 @@ async function main() {
     !events.some((e) => e.type === "result" && /usage limit/i.test(e.text))
       ? ok("usage-limit text was not surfaced as a result")
       : fail("usage-limit text leaked into a result event");
+
+    await fetch(`http://localhost:${PORT}/api/config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ harness: "mock-ok" }),
+    });
+    const selectedRes = await fetch(`http://localhost:${PORT}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "use the selected harness" }),
+    });
+    const selectedEvents = await readNdjson(selectedRes);
+    const starts = selectedEvents.filter((e) => e.type === "start").map((e) => e.harness);
+    starts[0] === "mock-ok" && !selectedEvents.some((e) => e.type === "switch")
+      ? ok("selected harness runs before fallback entries")
+      : fail(`selected harness was not first: ${JSON.stringify(starts)}`);
   } finally {
     server.kill("SIGTERM");
     if (hadConfig) fs.writeFileSync(CONFIG, backup);
