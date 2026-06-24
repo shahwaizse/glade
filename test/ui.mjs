@@ -46,7 +46,7 @@ async function main() {
 
   const server = spawn("node", ["server.js"], {
     cwd: ROOT,
-    env: { ...process.env, GLADE_PORT: String(PORT), PATH: `${BIN}:${process.env.PATH}` },
+    env: { ...process.env, GLADE_PORT: String(PORT), PATH: `${BIN}${path.delimiter}${process.env.PATH}` },
     stdio: ["ignore", "ignore", "inherit"],
   });
 

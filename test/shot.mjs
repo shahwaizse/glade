@@ -10,7 +10,7 @@ const PORT = 4197;
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
 
 const server = spawn("node", ["server.js"], {
-  cwd: ROOT, env: { ...process.env, GLADE_PORT: String(PORT), PATH: `${BIN}:${process.env.PATH}` },
+  cwd: ROOT, env: { ...process.env, GLADE_PORT: String(PORT), PATH: `${BIN}${path.delimiter}${process.env.PATH}` },
   stdio: ["ignore", "ignore", "inherit"],
 });
 const real = path.join(ROOT, "web", "gen-images", "1.jpg");

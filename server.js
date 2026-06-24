@@ -463,34 +463,76 @@ function textSignalsMissingCommand(text, command) {
   ).test(String(text || ""));
 }
 
+// Spawn the harness. Resolves with a live child; rejects on a genuine spawn
+// failure. On Windows a bare command name that resolves to a .bat/.cmd shim
+// (common for npm-installed CLIs) fails with an async ENOENT even though the
+// shim exists — libuv's non-shell PATH search there only matches true
+// executables. We retry once through a shell in that case, which can find
+// and launch it; a genuinely missing command still fails there too (cmd.exe
+// writes a "not recognized" stderr line instead, handled by
+// textSignalsMissingCommand once the caller is reading the stream).
 function spawnHarness(harness, args) {
   const options = {
     cwd: ROOT,
     env: { ...process.env, ...parseEnvFile() },
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["pipe", "pipe", "pipe"],
     windowsHide: true,
   };
-  // npm-installed CLIs are usually .cmd shims on Windows; those need a shell.
-  if (process.platform === "win32") options.shell = true;
-  return spawn(harness, args, options);
+
+  return new Promise((resolve, reject) => {
+    let child;
+    try {
+      child = spawn(harness, args, options);
+    } catch (err) {
+      return reject(err);
+    }
+    if (process.platform !== "win32") return resolve(child);
+
+    let settled = false;
+    child.once("spawn", () => {
+      settled = true;
+      resolve(child);
+    });
+    child.once("error", (err) => {
+      if (settled) return;
+      settled = true;
+      if (err.code !== "ENOENT") return reject(err);
+      try {
+        resolve(spawn(harness, args, { ...options, shell: true }));
+      } catch (err2) {
+        reject(err2);
+      }
+    });
+  });
 }
 
 // Spawn one harness attempt. Calls done("limit" | "unavailable" | "done" | "error") exactly once.
 function runAttempt(harness, fullPrompt, config, emit, res, done) {
-  const args = [...((config.harnessArgs || {})[harness] || []), fullPrompt];
+  const args = [...((config.harnessArgs || {})[harness] || [])];
   emit({ type: "start", harness });
 
-  let child;
-  try {
-    child = spawnHarness(harness, args);
-  } catch (err) {
-    if (err.code === "ENOENT") {
-      emit({ type: "log", text: `${harness} unavailable: ${err.message}` });
-      return done("unavailable", err.message);
+  spawnHarness(harness, args).then(
+    (child) => beginAttempt(harness, fullPrompt, child, emit, res, done),
+    (err) => {
+      if (err.code === "ENOENT") {
+        emit({ type: "log", text: `${harness} unavailable: ${err.message}` });
+        return done("unavailable", err.message);
+      }
+      emit({ type: "error", message: `failed to spawn ${harness}: ${err.message}` });
+      return done("error", err.message);
     }
-    emit({ type: "error", message: `failed to spawn ${harness}: ${err.message}` });
-    return done("error", err.message);
-  }
+  );
+}
+
+function beginAttempt(harness, fullPrompt, child, emit, res, done) {
+  // The prompt (often multi-line, with characters like <, >, & from the
+  // widget-contract instructions) goes over stdin rather than argv: argv has
+  // no safe, lossless escaping on Windows (cmd.exe can't represent embedded
+  // newlines at all), and both `claude -p` and `codex exec` read the prompt
+  // from stdin when no positional prompt is given.
+  child.stdin.on("error", () => {}); // EPIPE if the harness exits before reading
+  child.stdin.write(fullPrompt);
+  child.stdin.end();
 
   let limitHit = false;
   let unavailableHit = false;

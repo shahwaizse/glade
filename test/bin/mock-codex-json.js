@@ -1,0 +1,24 @@
+// Mock current Codex `exec --json` output shape.
+const out = (o) => process.stdout.write(JSON.stringify(o) + "\n");
+out({ type: "thread.started", thread_id: "test-thread" });
+out({ type: "turn.started" });
+out({ type: "item.started", item: {
+  id: "item_0",
+  type: "command_execution",
+  command: "/bin/sh -lc pwd",
+  status: "in_progress",
+} });
+out({ type: "item.completed", item: {
+  id: "item_0",
+  type: "command_execution",
+  command: "/bin/sh -lc pwd",
+  aggregated_output: process.cwd() + "\n",
+  exit_code: 0,
+  status: "completed",
+} });
+out({ type: "item.completed", item: {
+  id: "item_1",
+  type: "agent_message",
+  text: "codex status visible",
+} });
+out({ type: "turn.completed", usage: { input_tokens: 1, output_tokens: 1 } });

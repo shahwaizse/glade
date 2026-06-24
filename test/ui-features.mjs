@@ -40,7 +40,7 @@ async function main() {
   fs.writeFileSync(csvFile, "a,b,c\n1,2,3\n");
 
   const server = spawn("node", ["server.js"], {
-    cwd: ROOT, env: { ...process.env, GLADE_PORT: String(PORT), PATH: `${BIN}:${process.env.PATH}` },
+    cwd: ROOT, env: { ...process.env, GLADE_PORT: String(PORT), PATH: `${BIN}${path.delimiter}${process.env.PATH}` },
     stdio: ["ignore", "ignore", "inherit"],
   });
 

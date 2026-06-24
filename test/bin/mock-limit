@@ -1,10 +1,4 @@
 #!/usr/bin/env node
-// Mock harness that always reports a usage limit, to exercise Glade's failover.
-// The final CLI arg is the full prompt Glade passes in.
-const out = (o) => process.stdout.write(JSON.stringify(o) + "\n");
-out({ type: "assistant", message: { content: [{ type: "text", text: "starting on it" }] } });
-// Claude-style terminal result that signals the account is rate limited.
-out({ type: "result", subtype: "error_during_execution", is_error: true,
-      result: "Claude AI usage limit reached. Please try again later." });
-process.stderr.write("error: usage limit reached (429)\n");
-process.exit(1);
+// POSIX launcher — logic lives in mock-limit.js (shared with mock-limit.cmd
+// for Windows, since cmd.exe can't run a shebang script directly).
+require("./mock-limit.js");
