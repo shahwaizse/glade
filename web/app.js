@@ -9,6 +9,7 @@ const promptEl = document.getElementById("prompt");
 const genwrap = document.getElementById("genwrap");
 const genstatus = document.getElementById("genstatus");
 const genfeed = document.getElementById("genfeed");
+const flameLoader = document.querySelector(".flame-loader");
 const envpanel = document.getElementById("envpanel");
 const envform = document.getElementById("envform");
 const envtitle = document.getElementById("envtitle");
@@ -29,6 +30,9 @@ let generating = false;
 let lastPrompt = "";
 let state = { widgets: [], harness: "claude", harnessChain: [] };
 const attached = []; // { name, type, dataUrl, isImage } queued for the next prompt
+let fireClicks = 0;
+let fireClickTimer = null;
+let eggTimer = null;
 
 // ---------- icons ----------
 // Small local SVG set, using the Lucide visual language without a runtime CDN.
@@ -761,6 +765,58 @@ stage.addEventListener("drop", (e) => {
 const VERBS = ["igniting", "kindling", "stoking", "forging", "shaping"];
 const TOOL_GLYPH = { Write: "W", Edit: "E", Read: "R", Bash: "$", Grep: "G", Glob: "G", exec: "$" };
 
+function ensureEasterEgg() {
+  let egg = document.getElementById("golden-freddy");
+  if (egg) return egg;
+  egg = document.createElement("div");
+  egg.id = "golden-freddy";
+  egg.hidden = true;
+  egg.innerHTML = `
+    <div class="gf-static" aria-hidden="true"></div>
+    <img class="gf-figure" src="/assets/golden-freddy.png" alt="" aria-hidden="true" />
+    <div class="gf-words" aria-hidden="true">ITS ME</div>`;
+  egg.addEventListener("click", () => hideEasterEgg());
+  stage.appendChild(egg);
+  return egg;
+}
+
+function hideEasterEgg() {
+  const egg = document.getElementById("golden-freddy");
+  if (!egg) return;
+  clearTimeout(eggTimer);
+  egg.classList.remove("show", "dim");
+  setTimeout(() => { egg.hidden = true; }, 260);
+}
+
+function triggerEasterEgg() {
+  const egg = ensureEasterEgg();
+  clearTimeout(eggTimer);
+  egg.hidden = false;
+  egg.classList.remove("show");
+  egg.classList.add("dim");
+  requestAnimationFrame(() => {
+    setTimeout(() => egg.classList.add("show"), 640);
+  });
+  eggTimer = setTimeout(hideEasterEgg, 5200);
+}
+
+flameLoader?.addEventListener("click", (e) => {
+  if (genwrap.hidden || !genwrap.classList.contains("on")) return;
+  e.stopPropagation();
+  clearTimeout(fireClickTimer);
+  fireClicks += 1;
+  if (fireClicks >= 3) {
+    fireClicks = 0;
+    triggerEasterEgg();
+    return;
+  }
+  fireClickTimer = setTimeout(() => { fireClicks = 0; }, 1100);
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") hideEasterEgg();
+});
+
 function feedRow(kind, glyph, text) {
   const row = document.createElement("div");
   row.className = `feed-row feed-${kind}`;
@@ -777,6 +833,7 @@ async function generate(prompt, images) {
   lastPrompt = prompt;
   promptEl.value = "";
   promptEl.blur();
+  fireClicks = 0;
 
   genfeed.innerHTML = "";
   genstatus.textContent = `${VERBS[Math.floor(Math.random() * VERBS.length)]} build`;

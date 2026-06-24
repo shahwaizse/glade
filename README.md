@@ -33,6 +33,7 @@ When the harness is building, Glade shows you a tiny flame. Whatever you do, don
 ## Run
 
 ```sh
+npm i
 npm start
 ```
 
