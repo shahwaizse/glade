@@ -269,6 +269,65 @@ input:focus-visible,
   background: var(--surface-3);
 }
 
+.snap-preset-wrap {
+  position: relative;
+  display: none;
+}
+
+#stage[data-layout="snap"] .snap-preset-wrap {
+  display: inline-flex;
+}
+
+.snap-preset-menu[hidden] {
+  display: none;
+}
+
+.snap-preset-menu {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  z-index: 45;
+  min-width: 96px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(6px);
+  transition:
+    opacity 120ms ease,
+    transform 160ms var(--ease-out);
+}
+
+.snap-preset-wrap.open .snap-preset-menu {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%);
+}
+
+.snap-preset-menu button {
+  width: 100%;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--control-radius);
+  background: transparent;
+  color: var(--ink-dim);
+  cursor: pointer;
+  font-size: 12px;
+  text-align: left;
+  transition:
+    background-color 100ms ease,
+    color 100ms ease;
+}
+
+.snap-preset-menu button:hover,
+.snap-preset-menu button[aria-checked="true"] {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
 /* ============ Attachments ============ */
 
 #thumbs[hidden] { display: none; }
@@ -981,6 +1040,79 @@ input:focus-visible,
 
 #stage[data-layout="snap"] .widget-resize {
   display: none;
+}
+
+.snap-resizer-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 26;
+  pointer-events: none;
+}
+
+#stage[data-layout="free"] .snap-resizer-layer {
+  display: none;
+}
+
+.snap-resizer {
+  position: absolute;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.snap-resizer-vertical {
+  cursor: col-resize;
+}
+
+.snap-resizer-horizontal {
+  cursor: row-resize;
+}
+
+.snap-resizer::after {
+  content: "";
+  position: absolute;
+  border-radius: 999px;
+  background: rgba(122, 162, 255, 0.7);
+  box-shadow: 0 0 0 1px rgba(122, 162, 255, 0.18);
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.snap-resizer-vertical::after {
+  top: 10px;
+  bottom: 10px;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+}
+
+.snap-resizer-horizontal::after {
+  top: 50%;
+  right: 10px;
+  left: 10px;
+  height: 2px;
+  transform: translateY(-50%);
+}
+
+.snap-resizer:hover::after,
+.snap-resizer.dragging::after {
+  opacity: 1;
+}
+
+#grid.snap-resizing-cols {
+  cursor: col-resize;
+}
+
+#grid.snap-resizing-rows {
+  cursor: row-resize;
+}
+
+#grid.snap-resizing .widget {
+  user-select: none;
+}
+
+#grid.snap-resizing .widget-body {
+  pointer-events: none;
 }
 
 .widget.dragging {

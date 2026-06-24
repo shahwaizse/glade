@@ -26,6 +26,9 @@ const pallist = document.getElementById("pallist");
 const palettebtn = document.getElementById("palettebtn");
 const freeformModeBtn = document.getElementById("freeformmode");
 const snapModeBtn = document.getElementById("snapmode");
+const snapPresetWrap = document.getElementById("snappresetwrap");
+const snapPresetBtn = document.getElementById("snappresetbtn");
+const snapPresetMenu = document.getElementById("snappresetmenu");
 
 const mounted = new Map(); // slug -> { def, el, body, core, cleanups[] }
 let generating = false;
@@ -107,15 +110,32 @@ const setCoreOpen = (set) => localStorage.setItem("glade-core-open", JSON.string
 // slug in localStorage and auto-place new windows where they don't overlap.
 const GEOM_KEY = "glade-geom";
 const LAYOUT_KEY = "glade-layout-mode";
+const SNAP_GEOM_KEY = "glade-snap-geom";
+const SNAP_PRESET_KEY = "glade-snap-preset";
 const BOTTOM_RESERVE = 96;   // keep auto-placement clear of the command dock
 const DEFAULT_SIZE = { small: [340, 240], medium: [400, 320], large: [560, 420], full: [880, 560] };
+const SNAP_PRESETS = [3, 6, 9];
+const SNAP_MIN_W = 220;
+const SNAP_MIN_H = 160;
+const SNAP_DEFAULT_H = 220;
+const SNAP_MAX_H = 1800;
+const SNAP_HANDLE_MAX_GAP = 34;
+const SNAP_HANDLE_MIN_OVERLAP = 48;
+const SNAP_EDGE_HIT = 12;
 let zTop = 10;
 let layoutMode = localStorage.getItem(LAYOUT_KEY) || "free";
+let snapPreset = SNAP_PRESETS.includes(Number(localStorage.getItem(SNAP_PRESET_KEY)))
+  ? Number(localStorage.getItem(SNAP_PRESET_KEY))
+  : 3;
 const snapSpacer = document.createElement("div");
 snapSpacer.className = "snap-spacer";
 grid.appendChild(snapSpacer);
+const snapResizerLayer = document.createElement("div");
+snapResizerLayer.className = "snap-resizer-layer";
+grid.appendChild(snapResizerLayer);
 
 const allGeom = () => { try { return JSON.parse(localStorage.getItem(GEOM_KEY) || "{}"); } catch { return {}; } };
+const allSnapGeom = () => { try { return JSON.parse(localStorage.getItem(SNAP_GEOM_KEY) || "{}"); } catch { return {}; } };
 const widgetEls = () => [...grid.querySelectorAll(".widget")];
 const hasWidgets = () => widgetEls().length > 0;
 function saveGeom(slug, patch) {
@@ -192,34 +212,338 @@ function clampWindows() {
 let _rsz;
 window.addEventListener("resize", () => { clearTimeout(_rsz); _rsz = setTimeout(applyLayoutMode, 120); });
 
-function snapWindows() {
-  const widgets = widgetEls();
+function clearSnapResizers() {
+  snapResizerLayer.replaceChildren();
+}
+
+function snapMetrics(widgets = widgetEls()) {
   const rect = grid.getBoundingClientRect();
   const pad = rect.width < 640 ? 12 : 18;
   const gap = rect.width < 640 ? 10 : 14;
-  const cols = rect.width >= 1180 ? 3 : rect.width >= 760 ? 2 : 1;
-  const rows = Math.max(1, Math.ceil(Math.max(1, widgets.length) / cols));
   const availableW = Math.max(280, rect.width - pad * 2);
   const availableH = Math.max(260, rect.height - BOTTOM_RESERVE - pad * 2);
-  const cellW = Math.floor((availableW - gap * (cols - 1)) / cols);
-  const cellH = Math.max(220, Math.floor((availableH - gap * (rows - 1)) / rows));
+  return { widgets, rect, pad, gap, availableW, availableH };
+}
 
-  widgets.forEach((el, i) => {
+function clampValue(value, min, max) {
+  return Math.max(min, Math.min(value, max));
+}
+
+function defaultSnapGeoms(metrics) {
+  const count = Math.max(1, metrics.widgets.length);
+  const maxFitCols = Math.max(1, Math.floor((metrics.availableW + metrics.gap) / (SNAP_MIN_W + metrics.gap)));
+  const cols = Math.max(1, Math.min(snapPreset, maxFitCols, count));
+  const rows = Math.max(1, Math.ceil(count / cols));
+  const cellW = Math.floor((metrics.availableW - metrics.gap * (cols - 1)) / cols);
+  const cellH = Math.max(SNAP_DEFAULT_H, Math.floor((metrics.availableH - metrics.gap * (rows - 1)) / rows));
+  const geoms = {};
+
+  metrics.widgets.forEach((el, i) => {
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    geoms[el.dataset.slug] = {
+      x: metrics.pad + col * (cellW + metrics.gap),
+      y: metrics.pad + row * (cellH + metrics.gap),
+      w: cellW,
+      h: cellH,
+    };
+  });
+  return geoms;
+}
+
+function sanitizeSnapGeom(g, metrics) {
+  const w = clampValue(Number(g?.w) || SNAP_MIN_W, SNAP_MIN_W, metrics.availableW);
+  const h = clampValue(Number(g?.h) || SNAP_DEFAULT_H, SNAP_MIN_H, SNAP_MAX_H);
+  const maxX = metrics.pad + Math.max(0, metrics.availableW - w);
+  return {
+    x: clampValue(Number(g?.x) || metrics.pad, metrics.pad, maxX),
+    y: Math.max(metrics.pad, Number(g?.y) || metrics.pad),
+    w,
+    h,
+  };
+}
+
+function snapGeoms(metrics, reset = false) {
+  const saved = reset ? {} : allSnapGeom();
+  const defaults = defaultSnapGeoms(metrics);
+  const geoms = {};
+  for (const el of metrics.widgets) {
+    const slug = el.dataset.slug;
+    geoms[slug] = sanitizeSnapGeom(saved[slug] || defaults[slug], metrics);
+  }
+  return geoms;
+}
+
+function renderedSnapGeoms(metrics) {
+  const geoms = {};
+  for (const el of metrics.widgets) {
+    geoms[el.dataset.slug] = sanitizeSnapGeom({
+      x: parseFloat(el.style.left),
+      y: parseFloat(el.style.top),
+      w: el.offsetWidth,
+      h: el.offsetHeight,
+    }, metrics);
+  }
+  return geoms;
+}
+
+function saveSnapGeoms(geoms) {
+  localStorage.setItem(SNAP_GEOM_KEY, JSON.stringify(geoms));
+}
+
+function updateSnapCanvas(metrics, geoms) {
+  const bottoms = Object.values(geoms).map((g) => g.y + g.h);
+  const contentH = Math.max(metrics.rect.height + 1, Math.ceil(Math.max(metrics.pad, ...bottoms) + metrics.pad + BOTTOM_RESERVE));
+  snapSpacer.style.top = `${contentH}px`;
+  snapResizerLayer.style.width = `${Math.ceil(metrics.rect.width)}px`;
+  snapResizerLayer.style.height = `${contentH}px`;
+}
+
+function applySnapGeoms(metrics, geoms, persist = false) {
+  for (const el of metrics.widgets) {
+    const slug = el.dataset.slug;
+    const g = sanitizeSnapGeom(geoms[slug], metrics);
+    geoms[slug] = g;
     delete el.dataset.max;
     el.classList.remove("maximized");
     updateWindowButtons(el);
-    const col = i % cols;
-    const row = Math.floor(i / cols);
     applyGeom(el, {
-      x: pad + col * (cellW + gap),
-      y: pad + row * (cellH + gap),
-      w: cellW,
-      h: cellH,
+      x: Math.round(g.x),
+      y: Math.round(g.y),
+      w: Math.round(g.w),
+      h: Math.round(g.h),
     });
-  });
+  }
+  updateSnapCanvas(metrics, geoms);
+  if (persist) saveSnapGeoms(geoms);
+}
 
-  const totalH = pad * 2 + rows * cellH + Math.max(0, rows - 1) * gap + BOTTOM_RESERVE;
-  snapSpacer.style.top = `${totalH}px`;
+function snapRects(metrics, geoms) {
+  return metrics.widgets.map((el) => ({ slug: el.dataset.slug, ...geoms[el.dataset.slug] })).filter((r) => r.slug);
+}
+
+function rangeOverlap(aStart, aEnd, bStart, bEnd) {
+  return Math.min(aEnd, bEnd) - Math.max(aStart, bStart);
+}
+
+function makeSnapHandle(className, spec, style) {
+  const handle = document.createElement("div");
+  handle.className = `snap-resizer ${className}`;
+  Object.assign(handle.style, style);
+  handle.dataset.type = spec.type;
+  if (spec.slug) handle.dataset.slug = spec.slug;
+  handle.title = spec.type === "bottom" ? "Resize widget" : "Resize widgets";
+  enableSnapResizer(handle, spec);
+  snapResizerLayer.appendChild(handle);
+}
+
+function renderSnapResizers(metrics, geoms) {
+  clearSnapResizers();
+  const rects = snapRects(metrics, geoms);
+  const maxGap = Math.max(metrics.gap + 8, SNAP_HANDLE_MAX_GAP);
+
+  for (let i = 0; i < rects.length; i += 1) {
+    for (let j = i + 1; j < rects.length; j += 1) {
+      const a = rects[i], b = rects[j];
+      const left = a.x <= b.x ? a : b;
+      const right = left === a ? b : a;
+      const gapX = right.x - (left.x + left.w);
+      const overlapY = rangeOverlap(left.y, left.y + left.h, right.y, right.y + right.h);
+      if (gapX >= 4 && gapX <= maxGap && overlapY >= SNAP_HANDLE_MIN_OVERLAP) {
+        makeSnapHandle("snap-resizer-vertical", { type: "vertical", left: left.slug, right: right.slug }, {
+          left: `${Math.round(left.x + left.w)}px`,
+          top: `${Math.round(Math.max(left.y, right.y))}px`,
+          width: `${Math.round(gapX)}px`,
+          height: `${Math.round(overlapY)}px`,
+        });
+      }
+
+      const top = a.y <= b.y ? a : b;
+      const bottom = top === a ? b : a;
+      const gapY = bottom.y - (top.y + top.h);
+      const overlapX = rangeOverlap(top.x, top.x + top.w, bottom.x, bottom.x + bottom.w);
+      if (gapY >= 4 && gapY <= maxGap && overlapX >= SNAP_HANDLE_MIN_OVERLAP) {
+        makeSnapHandle("snap-resizer-horizontal", { type: "horizontal", top: top.slug, bottom: bottom.slug }, {
+          left: `${Math.round(Math.max(top.x, bottom.x))}px`,
+          top: `${Math.round(top.y + top.h)}px`,
+          width: `${Math.round(overlapX)}px`,
+          height: `${Math.round(gapY)}px`,
+        });
+      }
+    }
+  }
+
+  for (const r of rects) {
+    const hasBelow = rects.some((other) =>
+      other.slug !== r.slug &&
+      other.y >= r.y + r.h - 1 &&
+      rangeOverlap(r.x, r.x + r.w, other.x, other.x + other.w) >= SNAP_HANDLE_MIN_OVERLAP
+    );
+    if (!hasBelow) {
+      makeSnapHandle("snap-resizer-horizontal snap-resizer-bottom", { type: "bottom", slug: r.slug }, {
+        left: `${Math.round(r.x)}px`,
+        top: `${Math.round(r.y + r.h - SNAP_EDGE_HIT / 2)}px`,
+        width: `${Math.round(r.w)}px`,
+        height: `${SNAP_EDGE_HIT}px`,
+      });
+    }
+  }
+}
+
+function startSnapPairResize(handle, e, spec) {
+  e.preventDefault();
+  e.stopPropagation();
+
+  const metrics = snapMetrics();
+  const base = renderedSnapGeoms(metrics);
+  const next = { ...base };
+  const axisClass = spec.type === "vertical" ? "snap-resizing-cols" : "snap-resizing-rows";
+  dragSlug = "snap-resize";
+  grid.classList.add("snap-resizing", axisClass);
+  handle.classList.add("dragging");
+
+  pointerDrag(handle, e,
+    (dx, dy) => {
+      if (spec.type === "vertical") {
+        const left = base[spec.left], right = base[spec.right];
+        if (!left || !right) return;
+        const delta = clampValue(dx, SNAP_MIN_W - left.w, right.w - SNAP_MIN_W);
+        next[spec.left] = { ...left, w: left.w + delta };
+        next[spec.right] = { ...right, x: right.x + delta, w: right.w - delta };
+      } else {
+        const top = base[spec.top], bottom = base[spec.bottom];
+        if (!top || !bottom) return;
+        const delta = clampValue(dy, SNAP_MIN_H - top.h, bottom.h - SNAP_MIN_H);
+        next[spec.top] = { ...top, h: top.h + delta };
+        next[spec.bottom] = { ...bottom, y: bottom.y + delta, h: bottom.h - delta };
+      }
+      applySnapGeoms(metrics, next);
+    },
+    () => {
+      handle.classList.remove("dragging");
+      grid.classList.remove("snap-resizing", axisClass);
+      dragSlug = null;
+      saveSnapGeoms(next);
+      snapWindows();
+    });
+}
+
+function startSnapBottomResize(handle, e, slug) {
+  e.preventDefault();
+  e.stopPropagation();
+
+  const metrics = snapMetrics();
+  const base = renderedSnapGeoms(metrics);
+  const start = base[slug];
+  if (!start) return;
+
+  const next = { ...base };
+  let lastClientY = e.clientY;
+  let active = true;
+  let raf = 0;
+
+  dragSlug = "snap-resize";
+  grid.classList.add("snap-resizing", "snap-resizing-rows");
+  handle.classList.add("dragging");
+  handle.setPointerCapture(e.pointerId);
+
+  const apply = () => {
+    const rect = grid.getBoundingClientRect();
+    const contentY = lastClientY - rect.top + grid.scrollTop;
+    const h = clampValue(contentY - start.y, SNAP_MIN_H, SNAP_MAX_H);
+    next[slug] = { ...start, h };
+    applySnapGeoms(metrics, next);
+  };
+
+  const tick = () => {
+    if (!active) return;
+    const rect = grid.getBoundingClientRect();
+    const edge = 42;
+    if (lastClientY > rect.bottom - edge && next[slug].h < SNAP_MAX_H) {
+      const speed = clampValue((lastClientY - (rect.bottom - edge)) / 2, 4, 24);
+      grid.scrollTop += speed;
+      apply();
+    } else if (lastClientY < rect.top + edge && grid.scrollTop > 0) {
+      const speed = clampValue(((rect.top + edge) - lastClientY) / 2, 4, 18);
+      grid.scrollTop -= speed;
+      apply();
+    }
+    raf = requestAnimationFrame(tick);
+  };
+
+  const move = (ev) => {
+    lastClientY = ev.clientY;
+    apply();
+  };
+
+  const up = () => {
+    active = false;
+    cancelAnimationFrame(raf);
+    handle.removeEventListener("pointermove", move);
+    handle.removeEventListener("pointerup", up);
+    try { handle.releasePointerCapture(e.pointerId); } catch {}
+    handle.classList.remove("dragging");
+    grid.classList.remove("snap-resizing", "snap-resizing-rows");
+    dragSlug = null;
+    saveSnapGeoms(next);
+    snapWindows();
+  };
+
+  handle.addEventListener("pointermove", move);
+  handle.addEventListener("pointerup", up);
+  apply();
+  raf = requestAnimationFrame(tick);
+}
+
+function enableSnapResizer(handle, spec) {
+  handle.addEventListener("pointerdown", (e) => {
+    if (layoutMode !== "snap" || e.button !== 0) return;
+    if (spec.type === "bottom") startSnapBottomResize(handle, e, spec.slug);
+    else startSnapPairResize(handle, e, spec);
+  });
+}
+
+function snapWindows(opts = {}) {
+  const metrics = snapMetrics();
+  const geoms = snapGeoms(metrics, Boolean(opts.reset));
+  applySnapGeoms(metrics, geoms, true);
+  renderSnapResizers(metrics, geoms);
+}
+
+function renderSnapPresetButton() {
+  if (!snapPresetBtn || !snapPresetMenu) return;
+  snapPresetBtn.textContent = `${snapPreset}x${snapPreset}`;
+  snapPresetBtn.setAttribute("aria-label", `Snap grid preset: ${snapPreset} by ${snapPreset}`);
+  for (const btn of snapPresetMenu.querySelectorAll("[data-preset]")) {
+    btn.setAttribute("aria-checked", String(Number(btn.dataset.preset) === snapPreset));
+  }
+}
+
+function closeSnapPresetMenu() {
+  if (!snapPresetWrap || !snapPresetMenu || !snapPresetBtn) return;
+  snapPresetWrap.classList.remove("open");
+  snapPresetMenu.hidden = true;
+  snapPresetBtn.setAttribute("aria-expanded", "false");
+}
+
+function openSnapPresetMenu() {
+  if (!snapPresetWrap || !snapPresetMenu || !snapPresetBtn) return;
+  snapPresetMenu.hidden = false;
+  snapPresetWrap.classList.add("open");
+  snapPresetBtn.setAttribute("aria-expanded", "true");
+}
+
+function setSnapPreset(n) {
+  if (!SNAP_PRESETS.includes(n)) return;
+  snapPreset = n;
+  localStorage.setItem(SNAP_PRESET_KEY, String(n));
+  renderSnapPresetButton();
+  closeSnapPresetMenu();
+  if (layoutMode !== "snap") setLayoutMode("snap");
+  else {
+    grid.scrollTop = 0;
+    snapWindows({ reset: true });
+  }
 }
 
 function restoreFreeWindows() {
@@ -242,8 +566,12 @@ function applyLayoutMode() {
   grid.classList.toggle("snap-layout", snap);
   freeformModeBtn.setAttribute("aria-pressed", String(!snap));
   snapModeBtn.setAttribute("aria-pressed", String(snap));
+  closeSnapPresetMenu();
   if (snap) snapWindows();
-  else restoreFreeWindows();
+  else {
+    clearSnapResizers();
+    restoreFreeWindows();
+  }
 }
 
 function setLayoutMode(mode) {
@@ -254,6 +582,28 @@ function setLayoutMode(mode) {
 
 freeformModeBtn.onclick = () => setLayoutMode("free");
 snapModeBtn.onclick = () => setLayoutMode("snap");
+renderSnapPresetButton();
+
+snapPresetBtn?.addEventListener("click", (e) => {
+  e.stopPropagation();
+  if (layoutMode !== "snap") setLayoutMode("snap");
+  if (snapPresetMenu.hidden) openSnapPresetMenu();
+  else closeSnapPresetMenu();
+});
+
+snapPresetMenu?.addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-preset]");
+  if (!btn) return;
+  setSnapPreset(Number(btn.dataset.preset));
+});
+
+document.addEventListener("pointerdown", (e) => {
+  if (!snapPresetWrap?.contains(e.target)) closeSnapPresetMenu();
+});
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") closeSnapPresetMenu();
+});
 
 // ---------- state / widgets ----------
 

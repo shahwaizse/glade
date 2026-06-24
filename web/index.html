@@ -97,6 +97,15 @@
           <button type="button" id="freeformmode" aria-pressed="true" title="Freeform windows">Free</button>
           <button type="button" id="snapmode" aria-pressed="false" title="Snap windows to panels">Snap</button>
         </div>
+        <div id="snappresetwrap" class="snap-preset-wrap">
+          <button type="button" id="snappresetbtn" class="pill"
+                  aria-haspopup="menu" aria-expanded="false" title="Snap grid preset">3x3</button>
+          <div id="snappresetmenu" class="snap-preset-menu glass" role="menu" aria-label="Snap grid preset" hidden>
+            <button type="button" role="menuitemradio" data-preset="3" aria-checked="true">3x3</button>
+            <button type="button" role="menuitemradio" data-preset="6" aria-checked="false">6x6</button>
+            <button type="button" role="menuitemradio" data-preset="9" aria-checked="false">9x9</button>
+          </div>
+        </div>
         <span id="hint" aria-hidden="true"></span>
         <button type="button" id="palettebtn" class="pill" title="Commands (/)" aria-label="Open command palette">/ Commands</button>
       </div>
