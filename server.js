@@ -244,8 +244,12 @@ function listRooms(res) {
   sendJSON(res, 200, { rooms: listSnapshots(ROOMS_DIR) });
 }
 
+function roomSlug(name) {
+  return String(name || "").trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
 function saveRoom(name, res) {
-  const slug = String(name || "").trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-").replace(/^-+|-+$/g, "");
+  const slug = roomSlug(name);
   if (!slug) return sendJSON(res, 400, { error: "bad room name" });
   try {
     const dir = path.join(ROOMS_DIR, slug);
@@ -265,13 +269,44 @@ function saveRoom(name, res) {
 }
 
 function openRoom(name, res) {
-  const slug = String(name || "").replace(/[^a-z0-9-]+/g, "");
+  const slug = roomSlug(name);
   const dir = path.join(ROOMS_DIR, slug);
   if (!fs.existsSync(dir)) return sendJSON(res, 404, { error: "room not found" });
   try {
     snapshot({ label: `before opening room "${slug}"` });
     restoreFrom(dir);
     sendJSON(res, 200, { ok: true });
+  } catch (err) {
+    sendJSON(res, 500, { ok: false, error: err.message });
+  }
+}
+
+function deleteRoom(name, res) {
+  const slug = roomSlug(name);
+  const dir = path.join(ROOMS_DIR, slug);
+  if (!slug || !fs.existsSync(dir)) return sendJSON(res, 404, { error: "room not found" });
+  try {
+    fs.rmSync(dir, { recursive: true, force: true });
+    sendJSON(res, 200, { ok: true, name: slug });
+  } catch (err) {
+    sendJSON(res, 500, { ok: false, error: err.message });
+  }
+}
+
+function renameRoom(from, to, res) {
+  const oldSlug = roomSlug(from);
+  const newSlug = roomSlug(to);
+  const oldDir = path.join(ROOMS_DIR, oldSlug);
+  const newDir = path.join(ROOMS_DIR, newSlug);
+  if (!oldSlug || !fs.existsSync(oldDir)) return sendJSON(res, 404, { error: "room not found" });
+  if (!newSlug) return sendJSON(res, 400, { error: "bad room name" });
+  if (newSlug !== oldSlug && fs.existsSync(newDir)) return sendJSON(res, 409, { error: "room already exists" });
+  try {
+    if (newSlug !== oldSlug) fs.renameSync(oldDir, newDir);
+    const metaFile = path.join(newDir, "meta.json");
+    const meta = readJSON(metaFile, {});
+    fs.writeFileSync(metaFile, JSON.stringify({ ...meta, name: newSlug, renamedAt: new Date().toISOString() }, null, 2));
+    sendJSON(res, 200, { ok: true, name: newSlug });
   } catch (err) {
     sendJSON(res, 500, { ok: false, error: err.message });
   }
@@ -750,6 +785,14 @@ const server = http.createServer(async (req, res) => {
     if (p === "/api/rooms/open" && req.method === "POST") {
       const { name } = JSON.parse((await readBody(req)) || "{}");
       return openRoom(name, res);
+    }
+    if (p === "/api/rooms/delete" && req.method === "POST") {
+      const { name } = JSON.parse((await readBody(req)) || "{}");
+      return deleteRoom(name, res);
+    }
+    if (p === "/api/rooms/rename" && req.method === "POST") {
+      const { from, to } = JSON.parse((await readBody(req)) || "{}");
+      return renameRoom(from, to, res);
     }
 
     if (p === "/api/env" && req.method === "POST") {

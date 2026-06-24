@@ -92,11 +92,24 @@ input:focus-visible,
   transform: translateX(-50%);
   width: min(720px, calc(100vw - 28px));
   z-index: 30;
-  transition: bottom 180ms var(--ease-out);
+  opacity: 1;
+  visibility: visible;
+  transition:
+    bottom 180ms var(--ease-out),
+    opacity 140ms ease,
+    transform 180ms var(--ease-out),
+    visibility 140ms ease;
 }
 
 #stage.empty-state #dock {
   bottom: calc(50vh - 44px);
+}
+
+#stage.immersive #dock {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(14px);
+  visibility: hidden;
 }
 
 #cmd {
@@ -1315,9 +1328,10 @@ input:focus-visible,
 }
 
 .pal-row {
+  position: relative;
   width: 100%;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 12px;
   padding: 10px 11px;
   border: 0;
@@ -1356,6 +1370,54 @@ input:focus-visible,
   font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.pal-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: -4px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 100ms ease;
+}
+
+.pal-row:hover .pal-actions,
+.pal-row.active .pal-actions,
+.pal-row:focus-within .pal-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.pal-action {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-muted);
+  cursor: pointer;
+  transition:
+    background-color 100ms ease,
+    color 100ms ease,
+    transform 120ms var(--ease-out);
+}
+
+.pal-action:hover {
+  background: var(--surface-3);
+  color: var(--ink);
+}
+
+.pal-action:active {
+  transform: scale(0.96);
+}
+
+.pal-action .icon {
+  width: 14px;
+  height: 14px;
 }
 
 .pal-empty {

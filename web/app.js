@@ -53,6 +53,8 @@ const ICONS = {
   grip: '<circle cx="9" cy="6" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="9" cy="18" r="1"></circle><circle cx="15" cy="6" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="15" cy="18" r="1"></circle>',
   panels: '<rect width="18" height="18" x="3" y="3" rx="2"></rect><path d="M3 9h18"></path><path d="M9 21V9"></path>',
   layout: '<rect width="7" height="7" x="3" y="3" rx="1"></rect><rect width="7" height="7" x="14" y="3" rx="1"></rect><rect width="7" height="7" x="14" y="14" rx="1"></rect><rect width="7" height="7" x="3" y="14" rx="1"></rect>',
+  pencil: '<path d="M12 20h9"></path><path d="m16.5 3.5 4 4L7 21l-4 1 1-4Z"></path>',
+  trash: '<path d="M3 6h18"></path><path d="M8 6V4h8v2"></path><path d="m19 6-1 14H6L5 6"></path><path d="M10 11v5"></path><path d="M14 11v5"></path>',
 };
 
 const BRAND_ICONS = {
@@ -642,6 +644,7 @@ function unmountWidget(slug) {
   for (const fn of m.cleanups) { try { fn(); } catch {} }
   m.el.remove();
   mounted.delete(slug);
+  updateImmersiveState();
 }
 
 function widgetShell(w, core) {
@@ -788,9 +791,15 @@ function summonCore(slug) {
 
 // ---------- floating-window controller (move / resize / focus / maximize) ----------
 let dragSlug = null;   // retained so the stage file-drop overlay can ignore window drags
-function bringToFront(el) {
+function bringToFront(el, floor = 0) {
+  const currentTop = widgetEls().reduce((top, w) => Math.max(top, parseInt(w.style.zIndex, 10) || 0), 0);
+  zTop = Math.max(zTop, currentTop, floor);
   el.style.zIndex = ++zTop;
   saveGeom(el.dataset.slug, { z: zTop });
+}
+
+function updateImmersiveState() {
+  stage.classList.toggle("immersive", widgetEls().some((el) => el.dataset.max));
 }
 
 function updateWindowButtons(el) {
@@ -801,6 +810,7 @@ function updateWindowButtons(el) {
   btn.title = on ? "Restore widget" : "Maximize widget";
   btn.setAttribute("aria-label", btn.title);
   el.classList.toggle("maximized", on);
+  updateImmersiveState();
 }
 
 // Generic pointer drag: onMove(dx, dy) runs each frame; onDone persists.
@@ -933,12 +943,13 @@ function toggleMaximize(el) {
       w: el.offsetWidth, h: el.offsetHeight,
     });
     const rect = grid.getBoundingClientRect();
-    const g = { x: 16, y: 16, w: rect.width - 32, h: Math.max(220, rect.height - 32 - BOTTOM_RESERVE) };
+    if (layoutMode === "snap") grid.scrollTop = 0;
+    const g = { x: 16, y: 16, w: rect.width - 32, h: Math.max(220, rect.height - 32) };
     applyGeom(el, g);
     saveGeom(el.dataset.slug, g);
   }
   updateWindowButtons(el);
-  bringToFront(el);
+  bringToFront(el, 40);
 }
 
 // ---------- env panel ----------
@@ -1340,10 +1351,9 @@ function renderPalette(q) {
     return;
   }
   matches.forEach((it, i) => {
-    const row = document.createElement("button");
+    const row = document.createElement("div");
     const active = i === palIndex;
     const id = `pal-row-${i}`;
-    row.type = "button";
     row.id = id;
     row.setAttribute("role", "option");
     row.setAttribute("aria-selected", String(active));
@@ -1353,6 +1363,22 @@ function renderPalette(q) {
     row.querySelector(".pal-hint").textContent = it.hint || "";
     row.onpointerdown = (e) => e.preventDefault();
     row.onclick = () => runPaletteItem(it);
+    if (it.actions?.length) {
+      const actions = document.createElement("span");
+      actions.className = "pal-actions";
+      it.actions.forEach((action) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "pal-action";
+        btn.innerHTML = icon(action.icon);
+        btn.title = action.label;
+        btn.setAttribute("aria-label", action.label);
+        btn.onpointerdown = (e) => { e.preventDefault(); e.stopPropagation(); };
+        btn.onclick = (e) => { e.preventDefault(); e.stopPropagation(); action.run(it); };
+        actions.appendChild(btn);
+      });
+      row.appendChild(actions);
+    }
     pallist.appendChild(row);
     if (active) palinput.setAttribute("aria-activedescendant", id);
   });
@@ -1421,11 +1447,36 @@ async function doSaveRoom() {
   const r = await (await fetch("/api/rooms/save", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) })).json();
   flash(r.ok ? `saved room “${r.name}”` : (r.error || "save failed"));
 }
+async function renameRoomAction(room) {
+  const next = prompt2("Rename room:", room.name);
+  if (!next || next === room.name) return;
+  const r = await (await fetch("/api/rooms/rename", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ from: room.name, to: next }),
+  })).json();
+  flash(r.ok ? `renamed room “${r.name}”` : (r.error || "rename failed"));
+  if (r.ok) openRooms();
+}
+async function deleteRoomAction(room) {
+  if (!window.confirm(`Delete room “${room.name}”?`)) return;
+  const r = await (await fetch("/api/rooms/delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name: room.name }),
+  })).json();
+  flash(r.ok ? `deleted room “${room.name}”` : (r.error || "delete failed"));
+  if (r.ok) openRooms();
+}
 async function openRooms() {
   const { rooms } = await (await fetch("/api/rooms")).json();
   if (!rooms.length) return flash("no saved rooms yet");
   openPalette(rooms.map((r) => ({
     label: r.name, hint: `${r.widgetCount || 0} widgets`,
+    actions: [
+      { icon: "pencil", label: `Rename ${r.name}`, run: () => renameRoomAction(r) },
+      { icon: "trash", label: `Delete ${r.name}`, run: () => deleteRoomAction(r) },
+    ],
     run: async () => { await fetch("/api/rooms/open", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: r.name }) }); flash(`opened “${r.name}”`); loadState(); },
   })));
 }
@@ -1461,8 +1512,8 @@ function flash(text) {
   el._t = setTimeout(() => el.classList.remove("on"), 1800);
 }
 
-function prompt2(label) {
-  return window.prompt(label) || "";
+function prompt2(label, value = "") {
+  return window.prompt(label, value) || "";
 }
 
 function showModal(html) {
