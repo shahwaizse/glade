@@ -1,41 +1,39 @@
 # Glade
 
-A UI that builds itself. Glade starts as a black screen with one input. Describe what you want — a file explorer, a weather card, a pomodoro timer — and a coding harness (Claude Code or Codex) writes the widget, writes its backend, wires them up, and mounts it live. No reloads, no scaffolding, no config.
+Glade is a small dark playground for asking your agent harness to make the thing you wish was already on screen.
 
-![empty](docs/empty.png)
+A timer. A dashboard. A strange dot field. A tiny mission console. The kind of thing too specific to deserve a whole app, which is exactly why it should exist for the next ten minutes.
+
+You type. Glade grows widgets. You move them around like a little operating system with questionable priorities.
+
+![Glade at rest](docs/glade-empty.png)
+
+## Why This Is Fun
+
+- Start with almost nothing.
+- Ask for something weirdly specific.
+- Let the canvas fill up anyway.
+- Snap the mess into panels when you pretend to be organized.
+- Go back to floating windows when honesty returns.
+
+![A Glade canvas with widgets](docs/glade-showcase.png)
+
+## Windows Behaving, Briefly
+
+Glade can float, snap, maximize, and generally act like it has its life together. This is useful when the widgets are useful, and still satisfying when they are just pretty lights.
+
+![Glade snap layout](docs/glade-snap.png)
+
+## The Little Fire
+
+When the harness is building, Glade does the only reasonable thing: it stares into a tiny flame and pretends this was the plan all along.
+
+![Glade build state](docs/glade-building.png)
 
 ## Run
 
 ```sh
 npm start
-# → http://localhost:4173
 ```
 
-Needs Node 18+ and the `claude` CLI on PATH. To use Codex instead, set `{ "harness": "codex" }` in `glade.config.json`. Zero npm dependencies.
-
-## How it works
-
-Type a request. While the harness works, Glade shows what it's doing:
-
-![generating](docs/generating.png)
-
-The server runs the harness headlessly inside this folder. `CLAUDE.md` is its contract: build a UI module in `web/widgets/<slug>/`, an optional Node backend in `backends/<slug>.js`, register both in the manifest. Backends are hot-loaded on every call, so new widgets appear without restarting anything.
-
-![widgets](docs/widget.png)
-
-It isn't limited to widgets. Ask for something weirder — *"make a game engine and show a walking character walking around the widgets"* — and the harness extends Glade's own shell: an isometric world grows under the grid, the widgets become places, and you hop between them with WASD.
-
-![game](docs/game.png)
-
-If a widget needs an API key, a panel slides in asking for just that value — keys prefilled, paste and go. Widgets that only touch your machine (files, processes, git) need nothing at all.
-
-## Layout
-
-```
-server.js                      zero-dep server + harness runner
-CLAUDE.md                      the contract the harness follows
-web/                           the shell
-web/widgets/<slug>/widget.js   widget UIs (harness-generated)
-backends/<slug>.js             widget backends (harness-generated, hot-loaded)
-.env                           secrets (gitignored)
-```
+Open the local URL it prints. Bring an agent harness. Bring unreasonable requests.

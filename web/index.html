@@ -10,14 +10,12 @@
     Construct menu: version-pinned, no-build ESM leaf libraries the harness may
     reach for (documented in CLAUDE.md). These are libraries you *call* — they
     don't impose a framework. Import on demand inside a widget, e.g.
-      const THREE = await import("three");
+      const d3 = await import("d3");
     Pinned exact; mirror locally if you need offline.
   -->
   <script type="importmap">
   {
     "imports": {
-      "three": "https://esm.sh/three@0.160.0",
-      "three/": "https://esm.sh/three@0.160.0/",
       "d3": "https://esm.sh/d3@7.9.0",
       "chart.js": "https://esm.sh/chart.js@4.4.7/auto",
       "marked": "https://esm.sh/marked@15.0.0",
@@ -36,31 +34,22 @@
   </script>
 </head>
 <body>
-  <!-- SVG filters for liquid glass (displacement map injected by glass.js) -->
-  <svg class="defs" aria-hidden="true" width="0" height="0">
-    <defs>
-      <filter id="liquid-glass" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
-        <feImage id="lg-map" href="" x="0" y="0" width="100%" height="100%" result="map" preserveAspectRatio="none" />
-        <feDisplacementMap in="SourceGraphic" in2="map" scale="28" xChannelSelector="R" yChannelSelector="G" />
-      </filter>
-    </defs>
-  </svg>
-
   <div id="stage">
-    <!-- ambient background -->
-    <div class="ambient a1"></div>
-    <div class="ambient a2"></div>
-
     <!-- widget grid -->
     <main id="grid" class="empty"></main>
 
     <!-- generation window — a live feed of the harness actually working -->
     <div id="genwrap" hidden>
       <div id="genwindow">
-        <div class="gen-aurora"></div>
+        <div class="flame-loader" aria-hidden="true">
+          <span class="flame flame-back"></span>
+          <span class="flame flame-mid"></span>
+          <span class="flame flame-front"></span>
+          <span class="ember ember-one"></span>
+          <span class="ember ember-two"></span>
+        </div>
         <div id="genfeed"></div>
-        <div class="gen-veil"></div>
-        <div id="genstatus">conjuring…</div>
+        <div id="genstatus" role="status" aria-live="polite">igniting build</div>
       </div>
     </div>
 
@@ -76,9 +65,10 @@
 
     <!-- command palette -->
     <div id="palette" hidden>
-      <div id="palettebox" class="glass">
-        <input id="palinput" class="g-input" placeholder="Type a command…" autocomplete="off" spellcheck="false" />
-        <div id="pallist"></div>
+      <div id="palettebox" class="glass" role="dialog" aria-modal="true" aria-label="Command palette">
+        <input id="palinput" class="g-input" placeholder="Type a command" autocomplete="off" spellcheck="false"
+               role="combobox" aria-expanded="true" aria-controls="pallist" aria-autocomplete="list" />
+        <div id="pallist" role="listbox" aria-label="Commands"></div>
       </div>
     </div>
 
@@ -86,22 +76,25 @@
     <div id="dock">
       <div id="thumbs" hidden></div>
       <form id="cmd" class="glass">
-        <button type="button" id="attach" aria-label="Attach file" title="Attach anything (or paste / drop)">＋</button>
+        <button type="button" id="attach" class="icon-btn" aria-label="Attach file" title="Attach file"></button>
         <input id="imgfile" type="file" multiple hidden />
         <input id="prompt" type="text" autocomplete="off" spellcheck="false"
                placeholder="What should Glade become?" />
-        <button type="button" id="mic" aria-label="Speak" title="Hold to speak">🎙</button>
-        <button type="submit" id="go" aria-label="Send">↵</button>
+        <button type="button" id="mic" class="icon-btn" aria-label="Start voice input" title="Start voice input"></button>
+        <button type="submit" id="go" class="icon-btn primary" aria-label="Send prompt" title="Send prompt"></button>
       </form>
       <div id="dockbar">
-        <button type="button" id="harnesspill" class="pill" title="Switch harness">claude</button>
-        <span id="hint">glade builds its own interface — ask for anything</span>
-        <button type="button" id="palettebtn" class="pill" title="Commands ( / )">／ commands</button>
+        <button type="button" id="harnesspill" class="pill harness-pill" title="Switch harness" aria-label="Switch harness"></button>
+        <div id="layoutswitch" class="segmented" role="group" aria-label="Window layout">
+          <button type="button" id="freeformmode" aria-pressed="true" title="Freeform windows">Free</button>
+          <button type="button" id="snapmode" aria-pressed="false" title="Snap windows to panels">Snap</button>
+        </div>
+        <span id="hint" aria-hidden="true"></span>
+        <button type="button" id="palettebtn" class="pill" title="Commands (/)" aria-label="Open command palette">/ Commands</button>
       </div>
     </div>
   </div>
 
-  <script src="/glass.js"></script>
   <script type="module" src="/app.js"></script>
 </body>
 </html>

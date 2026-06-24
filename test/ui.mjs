@@ -56,6 +56,7 @@ async function main() {
     const page = await browser.newPage();
     const requests = [];
     let genBody = null;
+    let genBodyPromise = Promise.resolve();
     page.on("request", (r) => {
       if (r.url().endsWith("/api/generate") && r.method() === "POST") {
         try { requests.push(JSON.parse(r.postData() || "{}")); } catch {}
@@ -65,7 +66,7 @@ async function main() {
     // the transient status line is overwritten too fast to assert on reliably.
     page.on("response", async (resp) => {
       if (resp.url().endsWith("/api/generate")) {
-        try { genBody = await resp.text(); } catch {}
+        genBodyPromise = resp.text().then((text) => { genBody = text; }).catch(() => {});
       }
     });
 
@@ -89,6 +90,7 @@ async function main() {
       { timeout: 8000 }
     );
     ok("UI renders the fallback harness's final result after failover");
+    await genBodyPromise;
 
     // The NDJSON the browser received must contain the switch event.
     const events = (genBody || "").split("\n").filter(Boolean).map((l) => { try { return JSON.parse(l); } catch { return {}; } });

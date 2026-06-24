@@ -1,6 +1,6 @@
 # Glade — Widget Contract
 
-Glade is a self-extending UI. A user types a request into Glade; you (the harness) fulfill it by creating a **widget** (frontend module) and, if needed, a **backend** (Node script). The Glade server hot-loads backends and the UI re-mounts widgets automatically — **never restart the server, never run npm install, never modify the shell** (`server.js`, `web/index.html`, `web/app.js`, `web/glass.js`, `web/styles.css`) unless the user explicitly asks to change Glade itself.
+Glade is a self-extending UI. A user types a request into Glade; you (the harness) fulfill it by creating a **widget** (frontend module) and, if needed, a **backend** (Node script). The Glade server hot-loads backends and the UI re-mounts widgets automatically — **never restart the server, never run npm install, never modify the shell** (`server.js`, `web/index.html`, `web/app.js`, `web/styles.css`) unless the user explicitly asks to change Glade itself.
 
 Widgets must be **self-serving**: pick sensible defaults, never wait for configuration. The only exception is secrets (API keys), declared via `env` in the manifest — Glade renders the input panel for those automatically.
 
@@ -30,12 +30,11 @@ The `glade` object handed to `mount(el, glade)`:
 - `glade.store.get(k, default)` / `.set(k, v)` / `.del(k)` → persistence namespaced to this widget (localStorage).
 - `glade.refresh()` → re-mount this widget.
 
-Style guidance: Glade is a dark glass UI. Use the provided CSS variables and classes inside widgets: `--ink` (text), `--ink-dim` (secondary text), `--accent` (mint glow). Class `g-btn` for buttons, `g-input` for inputs, `g-list` / `g-row` for list layouts. Keep widgets dark, translucent, rounded. Inline `<style>` scoped to the widget root is fine.
+Style guidance: Glade is a dark, minimal workspace. Use the provided CSS variables and classes inside widgets: `--ink` (text), `--ink-dim` (secondary text), `--accent` (focused/active controls), `--surface` (panel background), and `--line` (borders). Class `g-btn` for buttons, `g-input` for inputs, `g-list` / `g-row` for list layouts. Keep widgets quiet, legible, and responsive; avoid glass blur, decorative gradients, and oversized rounded panels. Inline `<style>` scoped to the widget root is fine.
 
 **Constructs (libraries you may reach for).** `web/index.html` ships a version-pinned import map of *leaf* libraries. Import them on demand inside a widget — do **not** add other CDNs without the user asking:
 
 ```js
-const THREE = await import("three");        // 3D
 const d3 = await import("d3");              // data viz
 const { Chart } = await import("chart.js"); // charts
 const { marked } = await import("marked");  // markdown  (+ "dompurify" to sanitize)
@@ -108,7 +107,7 @@ These already exist in the shell — use them, don't reinvent them:
 
 ## 6. Self-modification ritual ("Glade builds Glade")
 
-Normally you must NOT touch the shell (`server.js`, `web/index.html`, `web/app.js`, `web/glass.js`, `web/styles.css`). The one exception is when the user **explicitly** asks to change Glade itself ("make the command bar do X", "add a dark/light toggle"). Then:
+Normally you must NOT touch the shell (`server.js`, `web/index.html`, `web/app.js`, `web/styles.css`). The one exception is when the user **explicitly** asks to change Glade itself ("make the command bar do X", "add a dark/light toggle"). Then:
 
 1. The shell is auto-snapshotted before every generation, so changes are recoverable — but be surgical.
 2. Editing `server.js` requires a manual restart to take effect; tell the user. Frontend shell files (`app.js`, `styles.css`, `index.html`) apply on browser reload.

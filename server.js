@@ -34,7 +34,7 @@ const MAX_HISTORY = 40;
 
 // Shell files that make up Glade's own body — snapshotted (but not auto-restored)
 // so "Glade builds Glade" self-edits are recoverable.
-const SHELL_FILES = ["server.js", "web/index.html", "web/app.js", "web/glass.js", "web/styles.css", "CLAUDE.md"];
+const SHELL_FILES = ["server.js", "web/index.html", "web/app.js", "web/styles.css", "CLAUDE.md"];
 
 const MIME = {
   ".html": "text/html; charset=utf-8",
@@ -279,7 +279,7 @@ function openRoom(name, res) {
 
 // ---------- harness ----------
 
-const HARNESS_PROMPT_PREFIX = `You are running inside Glade, a self-extending UI. Read CLAUDE.md in this directory FIRST and follow the widget contract exactly: create the widget module under web/widgets/<slug>/widget.js, an optional backend in backends/<slug>.js, register it in web/widgets/manifest.json, and declare any required env vars in the manifest. Do NOT restart the server; backends are hot-loaded and the UI refreshes itself. Do NOT modify server.js, web/index.html, web/app.js, web/glass.js, or web/styles.css unless the user's request explicitly requires changing Glade's shell.
+const HARNESS_PROMPT_PREFIX = `You are running inside Glade, a self-extending UI. Read CLAUDE.md in this directory FIRST and follow the widget contract exactly: create the widget module under web/widgets/<slug>/widget.js, an optional backend in backends/<slug>.js, register it in web/widgets/manifest.json, and declare any required env vars in the manifest. Do NOT restart the server; backends are hot-loaded and the UI refreshes itself. Do NOT modify server.js, web/index.html, web/app.js, or web/styles.css unless the user's request explicitly requires changing Glade's shell.
 
 User request: `;
 
@@ -811,7 +811,7 @@ fs.mkdirSync(ROOMS_DIR, { recursive: true });
 if (!fs.existsSync(MANIFEST)) fs.writeFileSync(MANIFEST, JSON.stringify({ widgets: [] }, null, 2));
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`\n  ✦ Glade is open at http://localhost:${PORT}`);
+  console.log(`\n  Glade is open at http://localhost:${PORT}`);
   for (const ip of localIPs()) console.log(`    on your network: http://${ip}:${PORT}`);
   console.log("");
 });

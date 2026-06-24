@@ -21,12 +21,65 @@ const palette = document.getElementById("palette");
 const palinput = document.getElementById("palinput");
 const pallist = document.getElementById("pallist");
 const palettebtn = document.getElementById("palettebtn");
+const freeformModeBtn = document.getElementById("freeformmode");
+const snapModeBtn = document.getElementById("snapmode");
 
 const mounted = new Map(); // slug -> { def, el, body, core, cleanups[] }
 let generating = false;
 let lastPrompt = "";
 let state = { widgets: [], harness: "claude", harnessChain: [] };
 const attached = []; // { name, type, dataUrl, isImage } queued for the next prompt
+
+// ---------- icons ----------
+// Small local SVG set, using the Lucide visual language without a runtime CDN.
+const ICONS = {
+  plus: '<path d="M5 12h14"></path><path d="M12 5v14"></path>',
+  mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><path d="M12 19v3"></path>',
+  "mic-off": '<path d="M16 9.5V5a4 4 0 0 0-6.1-3.4"></path><path d="M9 9v3a3 3 0 0 0 5.1 2.1"></path><path d="M4 10v2a8 8 0 0 0 12.4 6.7"></path><path d="M12 20v2"></path><path d="m2 2 20 20"></path>',
+  send: '<path d="M12 19V5"></path><path d="m5 12 7-7 7 7"></path>',
+  command: '<path d="M18 5a3 3 0 1 0-3 3h3V5Z"></path><path d="M6 5a3 3 0 1 1 3 3H6V5Z"></path><path d="M18 19a3 3 0 1 1-3-3h3v3Z"></path><path d="M6 19a3 3 0 1 0 3-3H6v3Z"></path><path d="M9 8h6v8H9z"></path>',
+  x: '<path d="M18 6 6 18"></path><path d="m6 6 12 12"></path>',
+  maximize: '<path d="M8 3H5a2 2 0 0 0-2 2v3"></path><path d="M16 3h3a2 2 0 0 1 2 2v3"></path><path d="M8 21H5a2 2 0 0 1-2-2v-3"></path><path d="M16 21h3a2 2 0 0 0 2-2v-3"></path>',
+  minimize: '<path d="M8 3v3a2 2 0 0 1-2 2H3"></path><path d="M16 3v3a2 2 0 0 0 2 2h3"></path><path d="M8 21v-3a2 2 0 0 0-2-2H3"></path><path d="M16 21v-3a2 2 0 0 1 2-2h3"></path>',
+  grip: '<circle cx="9" cy="6" r="1"></circle><circle cx="9" cy="12" r="1"></circle><circle cx="9" cy="18" r="1"></circle><circle cx="15" cy="6" r="1"></circle><circle cx="15" cy="12" r="1"></circle><circle cx="15" cy="18" r="1"></circle>',
+  panels: '<rect width="18" height="18" x="3" y="3" rx="2"></rect><path d="M3 9h18"></path><path d="M9 21V9"></path>',
+  layout: '<rect width="7" height="7" x="3" y="3" rx="1"></rect><rect width="7" height="7" x="14" y="3" rx="1"></rect><rect width="7" height="7" x="14" y="14" rx="1"></rect><rect width="7" height="7" x="3" y="14" rx="1"></rect>',
+};
+
+const BRAND_ICONS = {
+  claude: '<svg class="brand-icon claude-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.709 15.955l4.72-2.647.08-.23-.08-.128H9.2l-.79-.048-2.698-.073-2.339-.097-2.266-.122-.571-.121L0 11.784l.055-.352.48-.321.686.06 1.52.103 2.278.158 1.652.097 2.449.255h.389l.055-.157-.134-.098-.103-.097-2.358-1.596-2.552-1.688-1.336-.972-.724-.491-.364-.462-.158-1.008.656-.722.881.06.225.061.893.686 1.908 1.476 2.491 1.833.365.304.145-.103.019-.073-.164-.274-1.355-2.446-1.446-2.49-.644-1.032-.17-.619a2.97 2.97 0 01-.104-.729L6.283.134 6.696 0l.996.134.42.364.62 1.414 1.002 2.229 1.555 3.03.456.898.243.832.091.255h.158V9.01l.128-1.706.237-2.095.23-2.695.08-.76.376-.91.747-.492.584.28.48.685-.067.444-.286 1.851-.559 2.903-.364 1.942h.212l.243-.242.985-1.306 1.652-2.064.73-.82.85-.904.547-.431h1.033l.76 1.129-.34 1.166-1.064 1.347-.881 1.142-1.264 1.7-.79 1.36.073.11.188-.02 2.856-.606 1.543-.28 1.841-.315.833.388.091.395-.328.807-1.969.486-2.309.462-3.439.813-.042.03.049.061 1.549.146.662.036h1.622l3.02.225.79.522.474.638-.079.485-1.215.62-1.64-.389-3.829-.91-1.312-.329h-.182v.11l1.093 1.068 2.006 1.81 2.509 2.33.127.578-.322.455-.34-.049-2.205-1.657-.851-.747-1.926-1.62h-.128v.17l.444.649 2.345 3.521.122 1.08-.17.353-.608.213-.668-.122-1.374-1.925-1.415-2.167-1.143-1.943-.14.08-.674 7.254-.316.37-.729.28-.607-.461-.322-.747.322-1.476.389-1.924.315-1.53.286-1.9.17-.632-.012-.042-.14.018-1.434 1.967-2.18 2.945-1.726 1.845-.414.164-.717-.37.067-.662.401-.589 2.388-3.036 1.44-1.882.93-1.086-.006-.158h-.055L4.132 18.56l-1.13.146-.487-.456.061-.746.231-.243 1.908-1.312-.006.006z" fill="currentColor"></path></svg>',
+  codex: '<svg class="brand-icon codex-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M19.503 0H4.496A4.496 4.496 0 000 4.496v15.007A4.496 4.496 0 004.496 24h15.007A4.496 4.496 0 0024 19.503V4.496A4.496 4.496 0 0019.503 0z" fill="currentColor" opacity=".16"></path><path d="M9.064 3.344a4.578 4.578 0 012.285-.312c1 .115 1.891.54 2.673 1.275.01.01.024.017.037.021a.09.09 0 00.043 0 4.55 4.55 0 013.046.275l.047.022.116.057a4.581 4.581 0 012.188 2.399c.209.51.313 1.041.315 1.595a4.24 4.24 0 01-.134 1.223.123.123 0 00.03.115c.594.607.988 1.33 1.183 2.17.289 1.425-.007 2.71-.887 3.854l-.136.166a4.548 4.548 0 01-2.201 1.388.123.123 0 00-.081.076c-.191.551-.383 1.023-.74 1.494-.9 1.187-2.222 1.846-3.711 1.838-1.187-.006-2.239-.44-3.157-1.302a.107.107 0 00-.105-.024c-.388.125-.78.143-1.204.138a4.441 4.441 0 01-1.945-.466 4.544 4.544 0 01-1.61-1.335c-.152-.202-.303-.392-.414-.617a5.81 5.81 0 01-.37-.961 4.582 4.582 0 01-.014-2.298.124.124 0 00.006-.056.085.085 0 00-.027-.048 4.467 4.467 0 01-1.034-1.651 3.896 3.896 0 01-.251-1.192 5.189 5.189 0 01.141-1.6c.337-1.112.982-1.985 1.933-2.618.212-.141.413-.251.601-.33.215-.089.43-.164.646-.227a.098.098 0 00.065-.066 4.51 4.51 0 01.829-1.615 4.535 4.535 0 011.837-1.388zm3.482 10.565a.637.637 0 000 1.272h3.636a.637.637 0 100-1.272h-3.636zM8.462 9.23a.637.637 0 00-1.106.631l1.272 2.224-1.266 2.136a.636.636 0 101.095.649l1.454-2.455a.636.636 0 00.005-.64L8.462 9.23z" fill="currentColor"></path></svg>',
+};
+
+function icon(name) {
+  return `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ""}</svg>`;
+}
+
+function setIconButton(btn, name, label) {
+  btn.innerHTML = icon(name);
+  btn.setAttribute("aria-label", label);
+  btn.title = label;
+}
+
+function brandIcon(name) {
+  const key = String(name || "").toLowerCase();
+  if (key.includes("claude")) return BRAND_ICONS.claude;
+  if (key.includes("codex")) return BRAND_ICONS.codex;
+  return icon("panels");
+}
+
+function renderHarnessButton() {
+  const h = state.harness || "claude";
+  harnessPill.innerHTML = `${brandIcon(h)}<span>${h}</span>`;
+  harnessPill.setAttribute("aria-label", `Switch harness. Current harness: ${h}`);
+}
+
+setIconButton(attachBtn, "plus", "Attach file");
+setIconButton(micBtn, "mic", "Start voice input");
+setIconButton(document.getElementById("go"), "send", "Send prompt");
+palettebtn.innerHTML = `<span class="slash-mark" aria-hidden="true">/</span><span class="palette-label">Commands</span>`;
+freeformModeBtn.innerHTML = `${icon("panels")}<span>Free</span>`;
+snapModeBtn.innerHTML = `${icon("layout")}<span>Snap</span>`;
 
 // ---------- the widget event bus ----------
 // Lets widgets talk to each other: glade.emit(channel, data) / glade.on(...).
@@ -42,25 +95,164 @@ const CORE_WIDGETS = [
 const coreOpen = () => new Set(JSON.parse(localStorage.getItem("glade-core-open") || "[]"));
 const setCoreOpen = (set) => localStorage.setItem("glade-core-open", JSON.stringify([...set]));
 
-// ---------- layout order persistence ----------
-const savedOrder = () => JSON.parse(localStorage.getItem("glade-order") || "[]");
-function persistOrder() {
-  const order = [...grid.children].map((el) => el.dataset.slug).filter(Boolean);
-  localStorage.setItem("glade-order", JSON.stringify(order));
+// ---------- floating-window geometry ----------
+// Each widget is an absolutely-positioned window; we persist {x,y,w,h,z} per
+// slug in localStorage and auto-place new windows where they don't overlap.
+const GEOM_KEY = "glade-geom";
+const LAYOUT_KEY = "glade-layout-mode";
+const BOTTOM_RESERVE = 96;   // keep auto-placement clear of the command dock
+const DEFAULT_SIZE = { small: [340, 240], medium: [400, 320], large: [560, 420], full: [880, 560] };
+let zTop = 10;
+let layoutMode = localStorage.getItem(LAYOUT_KEY) || "free";
+const snapSpacer = document.createElement("div");
+snapSpacer.className = "snap-spacer";
+grid.appendChild(snapSpacer);
+
+const allGeom = () => { try { return JSON.parse(localStorage.getItem(GEOM_KEY) || "{}"); } catch { return {}; } };
+const widgetEls = () => [...grid.querySelectorAll(".widget")];
+const hasWidgets = () => widgetEls().length > 0;
+function saveGeom(slug, patch) {
+  if (layoutMode === "snap") return;
+  const all = allGeom();
+  all[slug] = { ...all[slug], ...patch };
+  localStorage.setItem(GEOM_KEY, JSON.stringify(all));
 }
-function applyOrder() {
-  const order = savedOrder();
-  const rank = (slug) => { const i = order.indexOf(slug); return i === -1 ? 1e9 : i; };
-  [...grid.children]
-    .sort((a, b) => rank(a.dataset.slug) - rank(b.dataset.slug))
-    .forEach((el) => grid.appendChild(el));
+function applyGeom(el, g) {
+  if (Number.isFinite(g.x)) el.style.left = `${g.x}px`;
+  if (Number.isFinite(g.y)) el.style.top = `${g.y}px`;
+  if (Number.isFinite(g.w)) el.style.width = `${g.w}px`;
+  if (Number.isFinite(g.h)) el.style.height = `${g.h}px`;
+  if (Number.isFinite(g.z)) { el.style.zIndex = g.z; zTop = Math.max(zTop, g.z); }
 }
+const overlaps = (a, b) =>
+  a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+
+// First non-overlapping slot, scanning top-left → right; cascade as fallback.
+function findSpot(w, h, rect) {
+  const pad = 24, step = 36;
+  const maxY = rect.height - BOTTOM_RESERVE;
+  const others = [...grid.querySelectorAll(".widget")]
+    .filter((e) => e.style.left)
+    .map((e) => ({ x: parseFloat(e.style.left) || 0, y: parseFloat(e.style.top) || 0, w: e.offsetWidth, h: e.offsetHeight }));
+  for (let y = pad; y + h <= maxY; y += step)
+    for (let x = pad; x + w <= rect.width - pad; x += step)
+      if (!others.some((o) => overlaps({ x, y, w, h }, o))) return { x, y };
+  const n = others.length;
+  return {
+    x: pad + ((n * 30) % Math.max(1, rect.width - w - pad)),
+    y: pad + ((n * 24) % Math.max(1, maxY - h - pad)),
+  };
+}
+
+// Position a freshly-created window: restore saved geometry or auto-place it.
+function placeWindow(el, size) {
+  const rect = grid.getBoundingClientRect();
+  const saved = allGeom()[el.dataset.slug];
+  if (saved && Number.isFinite(saved.x)) {
+    // clamp a restored window back inside the current viewport
+    const w = Math.min(saved.w || DEFAULT_SIZE.medium[0], rect.width - 16);
+    const h = Math.min(saved.h || DEFAULT_SIZE.medium[1], rect.height - 16);
+    const x = Math.max(0, Math.min(saved.x, rect.width - w));
+    const y = Math.max(0, Math.min(saved.y, rect.height - h));
+    applyGeom(el, { x, y, w, h, z: saved.z || ++zTop });
+    return;
+  }
+  const [dw, dh] = DEFAULT_SIZE[size] || DEFAULT_SIZE.medium;
+  const w = Math.min(dw, rect.width - 48);
+  const h = Math.min(dh, rect.height - 48);
+  const { x, y } = findSpot(w, h, rect);
+  const g = { x, y, w, h, z: ++zTop };
+  applyGeom(el, g);
+  saveGeom(el.dataset.slug, g);
+}
+
+// Keep every window inside the canvas after the viewport resizes.
+function clampWindows() {
+  if (layoutMode === "snap") { snapWindows(); return; }
+  const rect = grid.getBoundingClientRect();
+  for (const m of mounted.values()) {
+    const el = m.el;
+    const w = Math.min(el.offsetWidth, Math.max(260, rect.width - 16));
+    const h = Math.min(el.offsetHeight, Math.max(180, rect.height - 16));
+    el.style.width = `${w}px`;
+    el.style.height = `${h}px`;
+    const x = Math.max(0, Math.min(parseFloat(el.style.left) || 0, rect.width - w));
+    const y = Math.max(0, Math.min(parseFloat(el.style.top) || 0, rect.height - h));
+    el.style.left = `${x}px`;
+    el.style.top = `${y}px`;
+  }
+}
+let _rsz;
+window.addEventListener("resize", () => { clearTimeout(_rsz); _rsz = setTimeout(applyLayoutMode, 120); });
+
+function snapWindows() {
+  const widgets = widgetEls();
+  const rect = grid.getBoundingClientRect();
+  const pad = rect.width < 640 ? 12 : 18;
+  const gap = rect.width < 640 ? 10 : 14;
+  const cols = rect.width >= 1180 ? 3 : rect.width >= 760 ? 2 : 1;
+  const rows = Math.max(1, Math.ceil(Math.max(1, widgets.length) / cols));
+  const availableW = Math.max(280, rect.width - pad * 2);
+  const availableH = Math.max(260, rect.height - BOTTOM_RESERVE - pad * 2);
+  const cellW = Math.floor((availableW - gap * (cols - 1)) / cols);
+  const cellH = Math.max(220, Math.floor((availableH - gap * (rows - 1)) / rows));
+
+  widgets.forEach((el, i) => {
+    delete el.dataset.max;
+    el.classList.remove("maximized");
+    updateWindowButtons(el);
+    const col = i % cols;
+    const row = Math.floor(i / cols);
+    applyGeom(el, {
+      x: pad + col * (cellW + gap),
+      y: pad + row * (cellH + gap),
+      w: cellW,
+      h: cellH,
+    });
+  });
+
+  const totalH = pad * 2 + rows * cellH + Math.max(0, rows - 1) * gap + BOTTOM_RESERVE;
+  snapSpacer.style.top = `${totalH}px`;
+}
+
+function restoreFreeWindows() {
+  const savedAll = allGeom();
+  for (const m of mounted.values()) {
+    const el = m.el;
+    const saved = savedAll[el.dataset.slug];
+    el.classList.remove("maximized");
+    delete el.dataset.max;
+    if (saved && Number.isFinite(saved.x)) applyGeom(el, saved);
+    else placeWindow(el, m.def?.size || "medium");
+    updateWindowButtons(el);
+  }
+  clampWindows();
+}
+
+function applyLayoutMode() {
+  const snap = layoutMode === "snap";
+  stage.dataset.layout = layoutMode;
+  grid.classList.toggle("snap-layout", snap);
+  freeformModeBtn.setAttribute("aria-pressed", String(!snap));
+  snapModeBtn.setAttribute("aria-pressed", String(snap));
+  if (snap) snapWindows();
+  else restoreFreeWindows();
+}
+
+function setLayoutMode(mode) {
+  layoutMode = mode === "snap" ? "snap" : "free";
+  localStorage.setItem(LAYOUT_KEY, layoutMode);
+  applyLayoutMode();
+}
+
+freeformModeBtn.onclick = () => setLayoutMode("free");
+snapModeBtn.onclick = () => setLayoutMode("snap");
 
 // ---------- state / widgets ----------
 
 async function loadState() {
   state = await (await fetch("/api/state")).json();
-  harnessPill.textContent = state.harness || "claude";
+  renderHarnessButton();
 
   const liveSlugs = new Set(state.widgets.map((w) => w.slug));
   for (const [slug, m] of mounted) {
@@ -82,8 +274,8 @@ async function loadState() {
   for (const slug of coreOpen()) {
     if (!mounted.has(slug)) summonCore(slug);
   }
-  applyOrder();
-  stage.classList.toggle("empty-state", grid.children.length === 0);
+  applyLayoutMode();
+  stage.classList.toggle("empty-state", !hasWidgets());
 }
 
 function unmountWidget(slug) {
@@ -102,25 +294,33 @@ function widgetShell(w, core) {
   if (core) el.dataset.core = "1";
   el.draggable = false;
   el.innerHTML = `
-    <div class="widget-head" draggable="true">
-      <span class="drag-dot" title="Drag to rearrange">⋮⋮</span>
+    <div class="widget-head" tabindex="0">
+      <span class="drag-dot" title="Drag to move">${icon("grip")}</span>
       <span class="widget-title"></span>
-      <button class="widget-close" title="Remove widget">✕</button>
+      <div class="widget-actions">
+        <button type="button" class="widget-fullscreen" title="Maximize widget" aria-label="Maximize widget">${icon("maximize")}</button>
+        <button type="button" class="widget-close" title="Remove widget" aria-label="Remove widget">${icon("x")}</button>
+      </div>
     </div>
-    <div class="widget-body"></div>`;
+    <div class="widget-body"></div>
+    <div class="widget-resize" title="Resize"></div>`;
   el.querySelector(".widget-title").textContent = w.title || w.slug;
+  el.querySelector(".widget-head").setAttribute("aria-label", `${w.title || w.slug} window. Drag to move, double click or press Enter to maximize.`);
+  el.querySelector(".widget-fullscreen").onclick = () => toggleMaximize(el);
   el.querySelector(".widget-close").onclick = async () => {
     if (core) {
       const set = coreOpen(); set.delete(w.slug); setCoreOpen(set);
       unmountWidget(w.slug);
-      stage.classList.toggle("empty-state", grid.children.length === 0);
+      applyLayoutMode();
+      stage.classList.toggle("empty-state", !hasWidgets());
       return;
     }
     await fetch(`/api/widget/${w.slug}`, { method: "DELETE" });
     loadState();
   };
-  enableDrag(el);
   grid.appendChild(el);
+  placeWindow(el, w.size);
+  enableWindow(el);
   return el;
 }
 
@@ -135,7 +335,7 @@ async function addWidget(w) {
     badge.className = "env-badge";
     badge.textContent = "needs keys";
     badge.onclick = () => openEnvPanel(w);
-    el.querySelector(".widget-head").insertBefore(badge, el.querySelector(".widget-close"));
+    el.querySelector(".widget-head").insertBefore(badge, el.querySelector(".widget-actions"));
     openEnvPanel(w);
     return;
   }
@@ -204,7 +404,10 @@ async function mountWidget(w, m) {
       : `/widgets/${w.slug}/widget.js`;
     const mod = await import(`${src}?v=${Date.now()}`);
     m.def = mod.default || {};
-    if (m.def.title) m.el.querySelector(".widget-title").textContent = m.def.title;
+    if (m.def.title) {
+      m.el.querySelector(".widget-title").textContent = m.def.title;
+      m.el.querySelector(".widget-head").setAttribute("aria-label", `${m.def.title} window. Drag to move, double click or press Enter to maximize.`);
+    }
     if (m.def.size) m.el.className = `widget glass size-${m.def.size}`;
     await m.def.mount(m.body, makeGladeApi(w, m));
   } catch (err) {
@@ -222,28 +425,163 @@ function summonCore(slug) {
   const m = { el, body: el.querySelector(".widget-body"), def: {}, core: true, cleanups: [] };
   mounted.set(slug, m);
   mountWidget(def, m);
+  applyLayoutMode();
   stage.classList.remove("empty-state");
 }
 
-// ---------- draggable reorder ----------
-let dragSlug = null;
-function enableDrag(el) {
+// ---------- floating-window controller (move / resize / focus / maximize) ----------
+let dragSlug = null;   // retained so the stage file-drop overlay can ignore window drags
+function bringToFront(el) {
+  el.style.zIndex = ++zTop;
+  saveGeom(el.dataset.slug, { z: zTop });
+}
+
+function updateWindowButtons(el) {
+  const btn = el.querySelector(".widget-fullscreen");
+  if (!btn) return;
+  const on = Boolean(el.dataset.max);
+  btn.innerHTML = icon(on ? "minimize" : "maximize");
+  btn.title = on ? "Restore widget" : "Maximize widget";
+  btn.setAttribute("aria-label", btn.title);
+  el.classList.toggle("maximized", on);
+}
+
+// Generic pointer drag: onMove(dx, dy) runs each frame; onDone persists.
+function pointerDrag(target, e, onMove, onDone) {
+  e.preventDefault();
+  const sx = e.clientX, sy = e.clientY;
+  target.setPointerCapture(e.pointerId);
+  const move = (ev) => onMove(ev.clientX - sx, ev.clientY - sy);
+  const up = () => {
+    target.removeEventListener("pointermove", move);
+    target.removeEventListener("pointerup", up);
+    try { target.releasePointerCapture(e.pointerId); } catch {}
+    onDone?.();
+  };
+  target.addEventListener("pointermove", move);
+  target.addEventListener("pointerup", up);
+}
+
+function enableWindow(el) {
   const head = el.querySelector(".widget-head");
-  head.addEventListener("dragstart", (e) => {
+  const handle = el.querySelector(".widget-resize");
+
+  // any press inside the window raises it
+  el.addEventListener("pointerdown", () => bringToFront(el));
+
+  // move by the header (but not via the close button)
+  head.addEventListener("pointerdown", (e) => {
+    if (layoutMode === "snap" || e.button !== 0 || e.target.closest(".widget-actions, .env-badge")) return;
+    delete el.dataset.max;   // a manual move cancels the "maximized" memory
+    updateWindowButtons(el);
+    const rect = grid.getBoundingClientRect();
+    const ox = parseFloat(el.style.left) || 0, oy = parseFloat(el.style.top) || 0;
     dragSlug = el.dataset.slug;
     el.classList.add("dragging");
-    e.dataTransfer.effectAllowed = "move";
+    pointerDrag(head, e,
+      (dx, dy) => {
+        const x = Math.max(0, Math.min(ox + dx, rect.width - el.offsetWidth));
+        const y = Math.max(0, Math.min(oy + dy, rect.height - el.offsetHeight));
+        el.style.left = `${x}px`; el.style.top = `${y}px`;
+      },
+      () => {
+        el.classList.remove("dragging");
+        dragSlug = null;
+        saveGeom(el.dataset.slug, { x: parseFloat(el.style.left) || 0, y: parseFloat(el.style.top) || 0 });
+      });
   });
-  head.addEventListener("dragend", () => { el.classList.remove("dragging"); dragSlug = null; persistOrder(); });
-  el.addEventListener("dragover", (e) => {
-    if (!dragSlug || dragSlug === el.dataset.slug) return;
+
+  // resize from the bottom-right grip
+  handle.addEventListener("pointerdown", (e) => {
+    if (layoutMode === "snap" || e.button !== 0) return;
+    e.stopPropagation();
+    bringToFront(el);
+    delete el.dataset.max;
+    updateWindowButtons(el);
+    const rect = grid.getBoundingClientRect();
+    const ow = el.offsetWidth, oh = el.offsetHeight;
+    const ox = parseFloat(el.style.left) || 0, oy = parseFloat(el.style.top) || 0;
+    dragSlug = el.dataset.slug;
+    el.classList.add("dragging");
+    pointerDrag(handle, e,
+      (dx, dy) => {
+        const w = Math.max(220, Math.min(ow + dx, rect.width - ox));
+        const h = Math.max(120, Math.min(oh + dy, rect.height - oy));
+        el.style.width = `${w}px`; el.style.height = `${h}px`;
+      },
+      () => {
+        el.classList.remove("dragging");
+        dragSlug = null;
+        saveGeom(el.dataset.slug, { w: el.offsetWidth, h: el.offsetHeight });
+      });
+  });
+
+  // double-click header → maximize / restore
+  head.addEventListener("dblclick", (e) => {
+    if (e.target.closest(".widget-actions, .env-badge")) return;
+    toggleMaximize(el);
+  });
+
+  head.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      toggleMaximize(el);
+      return;
+    }
+    if (e.key === "Escape" && el.dataset.max) {
+      e.preventDefault();
+      toggleMaximize(el);
+      return;
+    }
+    if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key) || layoutMode === "snap") return;
+
     e.preventDefault();
-    const dragged = grid.querySelector(`.widget[data-slug="${CSS.escape(dragSlug)}"]`);
-    if (!dragged) return;
-    const rect = el.getBoundingClientRect();
-    const after = e.clientY > rect.top + rect.height / 2;
-    grid.insertBefore(dragged, after ? el.nextSibling : el);
+    delete el.dataset.max;
+    updateWindowButtons(el);
+    const rect = grid.getBoundingClientRect();
+    const step = e.altKey ? 1 : 16;
+    const dx = e.key === "ArrowRight" ? step : e.key === "ArrowLeft" ? -step : 0;
+    const dy = e.key === "ArrowDown" ? step : e.key === "ArrowUp" ? -step : 0;
+    const x = parseFloat(el.style.left) || 0;
+    const y = parseFloat(el.style.top) || 0;
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+
+    if (e.shiftKey) {
+      const nextW = Math.max(220, Math.min(w + dx, rect.width - x));
+      const nextH = Math.max(140, Math.min(h + dy, rect.height - y));
+      applyGeom(el, { w: nextW, h: nextH });
+      saveGeom(el.dataset.slug, { w: nextW, h: nextH });
+    } else {
+      const nextX = Math.max(0, Math.min(x + dx, rect.width - w));
+      const nextY = Math.max(0, Math.min(y + dy, rect.height - h));
+      applyGeom(el, { x: nextX, y: nextY });
+      saveGeom(el.dataset.slug, { x: nextX, y: nextY });
+    }
   });
+}
+
+function toggleMaximize(el) {
+  if (el.dataset.max) {
+    const g = el.dataset.max === "snap" ? null : JSON.parse(el.dataset.max);
+    delete el.dataset.max;
+    if (layoutMode === "snap") snapWindows();
+    else if (g) {
+      applyGeom(el, g);
+      saveGeom(el.dataset.slug, g);
+    }
+  } else {
+    el.dataset.max = layoutMode === "snap" ? "snap" : JSON.stringify({
+      x: parseFloat(el.style.left) || 0, y: parseFloat(el.style.top) || 0,
+      w: el.offsetWidth, h: el.offsetHeight,
+    });
+    const rect = grid.getBoundingClientRect();
+    const g = { x: 16, y: 16, w: rect.width - 32, h: Math.max(220, rect.height - 32 - BOTTOM_RESERVE) };
+    applyGeom(el, g);
+    saveGeom(el.dataset.slug, g);
+  }
+  updateWindowButtons(el);
+  bringToFront(el);
 }
 
 // ---------- env panel ----------
@@ -259,7 +597,7 @@ function openEnvPanel(w) {
     const input = document.createElement("input");
     input.className = "g-input";
     input.name = key;
-    input.placeholder = "paste value…";
+    input.placeholder = "paste value";
     input.autocomplete = "off";
     field.append(label, input);
     envform.appendChild(field);
@@ -384,8 +722,9 @@ function renderThumbs() {
     const x = document.createElement("button");
     x.type = "button";
     x.className = "thumb-x";
-    x.textContent = "✕";
-    x.title = "Remove";
+    x.innerHTML = icon("x");
+    x.setAttribute("aria-label", `Remove ${a.name || "attachment"}`);
+    x.title = "Remove attachment";
     x.onclick = () => { attached.splice(i, 1); renderThumbs(); };
     t.appendChild(x);
     thumbs.appendChild(t);
@@ -419,8 +758,8 @@ stage.addEventListener("drop", (e) => {
 
 // ---------- generation ----------
 
-const VERBS = ["conjuring", "weaving", "growing", "shaping", "summoning"];
-const TOOL_GLYPH = { Write: "✎", Edit: "✎", Read: "◉", Bash: "❯", Grep: "⌕", Glob: "⌕", exec: "❯" };
+const VERBS = ["igniting", "kindling", "stoking", "forging", "shaping"];
+const TOOL_GLYPH = { Write: "W", Edit: "E", Read: "R", Bash: "$", Grep: "G", Glob: "G", exec: "$" };
 
 function feedRow(kind, glyph, text) {
   const row = document.createElement("div");
@@ -440,7 +779,7 @@ async function generate(prompt, images) {
   promptEl.blur();
 
   genfeed.innerHTML = "";
-  genstatus.textContent = `${VERBS[Math.floor(Math.random() * VERBS.length)]}…`;
+  genstatus.textContent = `${VERBS[Math.floor(Math.random() * VERBS.length)]} build`;
   genwrap.hidden = false;
   requestAnimationFrame(() => genwrap.classList.add("on"));
 
@@ -470,25 +809,25 @@ async function generate(prompt, images) {
             feedRow("tool", g, `${ev.name.toLowerCase()} ${label}`.trim());
             genstatus.textContent = `${ev.name.toLowerCase()} · ${ev.detail || ""}`;
           } else if (ev.type === "thought") {
-            feedRow("thought", "✦", ev.text);
+            feedRow("thought", "N", ev.text);
             genstatus.textContent = ev.text;
           } else if (ev.type === "switch") {
-            feedRow("switch", "⤳", `${ev.from} hit its limit — switching to ${ev.to}`);
-            genstatus.textContent = `⤳ switching to ${ev.to}…`;
+            feedRow("switch", "S", `${ev.from} hit its limit. Switching to ${ev.to}.`);
+            genstatus.textContent = `switching to ${ev.to}`;
           } else if (ev.type === "start") {
-            feedRow("start", "✧", `${ev.harness} is on it`);
+            feedRow("start", "A", `${ev.harness} started`);
           } else if (ev.type === "result") {
             finalText = ev.text;
           } else if (ev.type === "error") {
-            feedRow("error", "✕", ev.message);
-            genstatus.textContent = `✕ ${ev.message}`;
+            feedRow("error", "!", ev.message);
+            genstatus.textContent = `Error: ${ev.message}`;
           }
         } catch {}
       }
     }
-    if (finalText) { feedRow("result", "✓", finalText); genstatus.textContent = finalText; }
+    if (finalText) { feedRow("result", "OK", finalText); genstatus.textContent = finalText; }
   } catch (err) {
-    genstatus.textContent = `✕ ${err.message}`;
+    genstatus.textContent = `Error: ${err.message}`;
   }
 
   await loadState();
@@ -517,23 +856,27 @@ let palIndex = 0;
 function baseCommands() {
   const cmds = [
     { label: "Undo last build", hint: "revert the most recent generation", run: doUndo },
-    { label: "History…", hint: "restore any earlier snapshot", run: openHistory },
-    { label: "Save room…", hint: "freeze this canvas under a name", run: doSaveRoom },
-    { label: "Open room…", hint: "summon a saved canvas", run: openRooms },
+    { label: "History", hint: "restore an earlier snapshot", run: openHistory },
+    { label: "Save room", hint: "freeze this canvas under a name", run: doSaveRoom },
+    { label: "Open room", hint: "open a saved canvas", run: openRooms },
     { label: "Clear canvas", hint: "remove every widget (undoable)", run: clearCanvas },
-    { label: "Re-run last prompt", hint: lastPrompt ? `“${lastPrompt.slice(0, 40)}”` : "nothing yet", run: () => lastPrompt && generate(lastPrompt, []) },
-    { label: "Share / show QR", hint: "open this Glade on your phone", run: showShare },
+    { label: "Rerun last prompt", hint: lastPrompt ? lastPrompt.slice(0, 44) : "nothing yet", run: () => lastPrompt && generate(lastPrompt, []) },
+    { label: "Use freeform windows", hint: layoutMode === "free" ? "active" : "floating layout", run: () => setLayoutMode("free") },
+    { label: "Snap windows to panels", hint: layoutMode === "snap" ? "active" : "panel layout", run: () => setLayoutMode("snap") },
+    { label: "Share QR", hint: "open this Glade on your phone", run: showShare },
   ];
   for (const c of CORE_WIDGETS) {
     cmds.push({ label: `Open ${c.title}`, hint: "built-in capability", run: () => summonCore(c.slug) });
   }
   for (const h of state.harnessChain || []) {
-    cmds.push({ label: `Switch harness → ${h}`, hint: h === state.harness ? "active" : "", run: () => switchHarness(h) });
+    cmds.push({ label: `Switch harness: ${h}`, hint: h === state.harness ? "active" : "", run: () => switchHarness(h) });
   }
   return cmds;
 }
 
+let palCloseTimer = null;
 function openPalette(items) {
+  clearTimeout(palCloseTimer);
   palItems = items || baseCommands();
   palIndex = 0;
   palinput.value = "";
@@ -544,48 +887,89 @@ function openPalette(items) {
 }
 function closePalette() {
   palette.classList.remove("on");
-  setTimeout(() => (palette.hidden = true), 250);
+  clearTimeout(palCloseTimer);
+  palCloseTimer = setTimeout(() => (palette.hidden = true), 250);
 }
 function renderPalette(q) {
   const ql = q.toLowerCase();
   const matches = palItems.filter((it) => it.label.toLowerCase().includes(ql));
   palIndex = Math.min(palIndex, Math.max(0, matches.length - 1));
   pallist.innerHTML = "";
+  if (!matches.length) {
+    palinput.removeAttribute("aria-activedescendant");
+    pallist.innerHTML = `<div class="pal-empty" role="status">No commands found</div>`;
+    pallist._matches = [];
+    return;
+  }
   matches.forEach((it, i) => {
-    const row = document.createElement("div");
+    const row = document.createElement("button");
+    const active = i === palIndex;
+    const id = `pal-row-${i}`;
+    row.type = "button";
+    row.id = id;
+    row.setAttribute("role", "option");
+    row.setAttribute("aria-selected", String(active));
     row.className = "pal-row" + (i === palIndex ? " active" : "");
     row.innerHTML = `<span class="pal-label"></span><span class="pal-hint"></span>`;
     row.querySelector(".pal-label").textContent = it.label;
     row.querySelector(".pal-hint").textContent = it.hint || "";
-    row.onclick = () => { closePalette(); it.run(); };
+    row.onpointerdown = (e) => e.preventDefault();
+    row.onclick = () => runPaletteItem(it);
     pallist.appendChild(row);
+    if (active) palinput.setAttribute("aria-activedescendant", id);
   });
   pallist._matches = matches;
+  scrollActivePalette();
 }
-palinput.addEventListener("input", () => renderPalette(palinput.value));
+
+function scrollActivePalette() {
+  const active = pallist.querySelector(".pal-row.active");
+  if (!active) return;
+  const pad = 8;
+  const listRect = pallist.getBoundingClientRect();
+  const activeRect = active.getBoundingClientRect();
+  if (activeRect.top < listRect.top + pad) {
+    pallist.scrollTop += activeRect.top - listRect.top - pad;
+  } else if (activeRect.bottom > listRect.bottom - pad) {
+    pallist.scrollTop += activeRect.bottom - listRect.bottom + pad;
+  }
+}
+
+function runPaletteItem(it) {
+  closePalette();
+  it.run();
+}
+
+palinput.addEventListener("input", () => { palIndex = 0; renderPalette(palinput.value); });
 palinput.addEventListener("keydown", (e) => {
   const matches = pallist._matches || [];
+  if (!matches.length && ["ArrowDown", "ArrowUp", "Home", "End", "Enter"].includes(e.key)) {
+    e.preventDefault();
+    return;
+  }
   if (e.key === "ArrowDown") { e.preventDefault(); palIndex = Math.min(palIndex + 1, matches.length - 1); renderPalette(palinput.value); }
   else if (e.key === "ArrowUp") { e.preventDefault(); palIndex = Math.max(palIndex - 1, 0); renderPalette(palinput.value); }
-  else if (e.key === "Enter") { e.preventDefault(); const it = matches[palIndex]; if (it) { closePalette(); it.run(); } }
+  else if (e.key === "Home") { e.preventDefault(); palIndex = 0; renderPalette(palinput.value); }
+  else if (e.key === "End") { e.preventDefault(); palIndex = Math.max(0, matches.length - 1); renderPalette(palinput.value); }
+  else if (e.key === "Enter") { e.preventDefault(); const it = matches[palIndex]; if (it) runPaletteItem(it); }
   else if (e.key === "Escape") { e.preventDefault(); closePalette(); }
 });
 palette.addEventListener("click", (e) => { if (e.target === palette) closePalette(); });
 palettebtn.onclick = () => openPalette();
 harnessPill.onclick = () => openPalette((state.harnessChain || []).map((h) => ({
-  label: `Switch harness → ${h}`, hint: h === state.harness ? "active" : "", run: () => switchHarness(h),
+  label: `Switch harness: ${h}`, hint: h === state.harness ? "active" : "", run: () => switchHarness(h),
 })));
 
 // ---------- palette actions ----------
 
 async function doUndo() {
   const r = await (await fetch("/api/undo", { method: "POST" })).json();
-  flash(r.ok ? "↩ undone" : (r.error || "nothing to undo"));
+  flash(r.ok ? "Undone" : (r.error || "nothing to undo"));
   loadState();
 }
 async function switchHarness(h) {
   await fetch("/api/config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ harness: h }) });
-  flash(`harness → ${h}`);
+  flash(`harness: ${h}`);
   loadState();
 }
 async function clearCanvas() {
@@ -671,11 +1055,7 @@ if (SR) {
     rec.start(); listening = true; micBtn.classList.add("on");
   };
   const stop = () => { if (rec && listening) rec.stop(); };
-  micBtn.addEventListener("mousedown", start);
-  micBtn.addEventListener("mouseup", stop);
-  micBtn.addEventListener("mouseleave", stop);
-  micBtn.addEventListener("touchstart", (e) => { e.preventDefault(); start(); });
-  micBtn.addEventListener("touchend", (e) => { e.preventDefault(); stop(); });
+  micBtn.addEventListener("click", () => (listening ? stop() : start()));
 } else {
   micBtn.style.display = "none";
 }
