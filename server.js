@@ -372,6 +372,9 @@ function lineSignalsLimit(line) {
   if (ev.type === "error") {
     return LIMIT_RE.test(JSON.stringify(ev.error || ev));
   }
+  if (ev.type === "turn.failed") {
+    return LIMIT_RE.test(JSON.stringify(ev.error || ev.message || ev));
+  }
   return false; // assistant / system / tool events never trigger a switch
 }
 
@@ -429,16 +432,20 @@ function runHarness(userRequest, attachPaths, res) {
     }
     const harness = chain[idx];
 
-    runAttempt(harness, buildPrompt(userRequest, attachPaths, priorHarness), config, emit, res, (outcome) => {
-      if (outcome === "limit") {
+    runAttempt(harness, buildPrompt(userRequest, attachPaths, priorHarness), config, emit, res, (outcome, detail) => {
+      if (outcome === "limit" || outcome === "unavailable") {
         const next = chain[idx + 1];
         if (next) {
-          emit({ type: "switch", from: harness, to: next, reason: "usage limit reached" });
-          priorHarness = harness;
+          const reason = outcome === "limit" ? "usage limit reached" : "harness unavailable";
+          emit({ type: "switch", from: harness, to: next, reason });
+          if (outcome === "limit") priorHarness = harness;
           idx += 1;
           return runNext();
         }
-        emit({ type: "error", message: `${harness} hit its usage limit and no fallback harness is configured.` });
+        const message = outcome === "limit"
+          ? `${harness} hit its usage limit and no fallback harness is configured.`
+          : `${harness} could not be started${detail ? `: ${detail}` : ""}`;
+        emit({ type: "error", message });
         return res.end();
       }
       res.end();
@@ -448,40 +455,73 @@ function runHarness(userRequest, attachPaths, res) {
   runNext();
 }
 
-// Spawn one harness attempt. Calls done("limit" | "done" | "error") exactly once.
+function textSignalsMissingCommand(text, command) {
+  const safe = String(command || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(
+    `(?:spawn\\s+${safe}\\s+ENOENT|${safe}[^\\n]*(?:not recognized|command not found)|(?:not recognized|command not found)[^\\n]*${safe})`,
+    "i"
+  ).test(String(text || ""));
+}
+
+function spawnHarness(harness, args) {
+  const options = {
+    cwd: ROOT,
+    env: { ...process.env, ...parseEnvFile() },
+    stdio: ["ignore", "pipe", "pipe"],
+    windowsHide: true,
+  };
+  // npm-installed CLIs are usually .cmd shims on Windows; those need a shell.
+  if (process.platform === "win32") options.shell = true;
+  return spawn(harness, args, options);
+}
+
+// Spawn one harness attempt. Calls done("limit" | "unavailable" | "done" | "error") exactly once.
 function runAttempt(harness, fullPrompt, config, emit, res, done) {
   const args = [...((config.harnessArgs || {})[harness] || []), fullPrompt];
   emit({ type: "start", harness });
 
   let child;
   try {
-    child = spawn(harness, args, {
-      cwd: ROOT,
-      env: { ...process.env, ...parseEnvFile() },
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    child = spawnHarness(harness, args);
   } catch (err) {
+    if (err.code === "ENOENT") {
+      emit({ type: "log", text: `${harness} unavailable: ${err.message}` });
+      return done("unavailable", err.message);
+    }
     emit({ type: "error", message: `failed to spawn ${harness}: ${err.message}` });
-    return done("error");
+    return done("error", err.message);
   }
 
   let limitHit = false;
+  let unavailableHit = false;
+  let unavailableMessage = "";
   let settled = false;
-  const finish = (outcome) => {
+  const finish = (outcome, detail) => {
     if (settled) return;
     settled = true;
-    done(outcome);
+    done(outcome, detail);
   };
   const flagLimit = () => {
-    if (limitHit) return;
+    if (limitHit || unavailableHit) return;
     limitHit = true;
     emit({ type: "log", text: `${harness} signalled a usage limit; failing over…` });
     if (child.exitCode === null) child.kill("SIGTERM"); // stop early so we can switch
   };
+  const flagUnavailable = (message) => {
+    if (unavailableHit || limitHit) return;
+    unavailableHit = true;
+    unavailableMessage = String(message || "command not found").trim();
+    emit({ type: "log", text: `${harness} unavailable: ${unavailableMessage.slice(0, 300)}` });
+    if (child.exitCode === null) child.kill("SIGTERM");
+  };
 
   child.on("error", (err) => {
+    if (err.code === "ENOENT") {
+      flagUnavailable(err.message);
+      return finish("unavailable", err.message);
+    }
     emit({ type: "error", message: `harness error: ${err.message}` });
-    finish(limitHit ? "limit" : "error");
+    finish(limitHit ? "limit" : "error", err.message);
   });
 
   let buf = "";
@@ -498,11 +538,12 @@ function runAttempt(harness, fullPrompt, config, emit, res, done) {
   });
   child.stderr.on("data", (chunk) => {
     const text = chunk.toString();
-    if (LIMIT_RE.test(text)) flagLimit();
+    if (textSignalsMissingCommand(text, harness)) flagUnavailable(text);
+    else if (LIMIT_RE.test(text)) flagLimit();
     emit({ type: "log", text: text.slice(0, 2000) });
   });
   child.on("close", () => {
-    finish(limitHit ? "limit" : "done");
+    finish(unavailableHit ? "unavailable" : limitHit ? "limit" : "done", unavailableMessage);
   });
   res.on("close", () => {
     if (child.exitCode === null) child.kill("SIGTERM");
@@ -532,12 +573,46 @@ function forwardHarnessLine(line, emit) {
     emit({ type: "result", text: String(ev.result || "").slice(0, 1000) });
   } else if (ev.msg) {
     // Codex --json events
-    const m = ev.msg;
-    if (m.type === "agent_message" && m.message) {
-      emit({ type: "thought", text: String(m.message).slice(0, 400) });
-    } else if (m.type === "exec_command_begin") {
-      emit({ type: "tool", name: "exec", detail: (m.command || []).join(" ").slice(0, 200) });
+    forwardCodexMessage(ev.msg, emit);
+  } else if (ev.type && ev.type.startsWith("item.")) {
+    forwardCodexItem(ev, emit);
+  }
+}
+
+function compactText(value, max = 400) {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+function commandText(command) {
+  if (Array.isArray(command)) return command.join(" ");
+  return String(command || "");
+}
+
+function forwardCodexMessage(m, emit) {
+  if (!m || typeof m !== "object") return;
+  if (m.type === "agent_message" && m.message) {
+    emit({ type: "thought", text: compactText(m.message) });
+  } else if (m.type === "exec_command_begin") {
+    emit({ type: "tool", name: "exec", detail: commandText(m.command).slice(0, 200) });
+  }
+}
+
+function forwardCodexItem(ev, emit) {
+  const item = ev.item || {};
+  if (item.type === "agent_message") {
+    const text = compactText(item.text || item.message);
+    if (text) emit({ type: "thought", text });
+  } else if (item.type === "command_execution") {
+    if (ev.type === "item.started" || item.status === "in_progress") {
+      emit({ type: "tool", name: "exec", detail: commandText(item.command).slice(0, 200) });
     }
+  } else if (/tool|command|exec/i.test(item.type || "")) {
+    const name = item.name || item.tool_name || item.type || "tool";
+    const detail = compactText(item.command || item.input || item.arguments || item.path || item.file_path || "", 200);
+    emit({ type: "tool", name, detail });
+  } else {
+    const text = compactText(item.text || item.message || item.summary);
+    if (text) emit({ type: "thought", text });
   }
 }
 

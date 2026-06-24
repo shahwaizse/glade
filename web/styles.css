@@ -866,6 +866,7 @@ input:focus-visible,
 
 .feed-tool .feed-glyph,
 .feed-tool { color: #bfdbfe; }
+.feed-log { color: #8e98a8; }
 .feed-switch { color: #fbbf24; }
 .feed-error { color: var(--danger); }
 .feed-result { color: var(--ok); }

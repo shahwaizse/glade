@@ -1258,12 +1258,16 @@ async function generate(prompt, images) {
             feedRow("thought", "N", ev.text);
             genstatus.textContent = ev.text;
           } else if (ev.type === "switch") {
-            feedRow("switch", "S", `${ev.from} hit its limit. Switching to ${ev.to}.`);
+            const limited = /limit/i.test(ev.reason || "");
+            feedRow("switch", "S", limited ? `${ev.from} hit its limit. Switching to ${ev.to}.` : `${ev.from} unavailable. Switching to ${ev.to}.`);
             genstatus.textContent = `switching to ${ev.to}`;
           } else if (ev.type === "start") {
             feedRow("start", "A", `${ev.harness} started`);
           } else if (ev.type === "result") {
             finalText = ev.text;
+          } else if (ev.type === "log") {
+            feedRow("log", "·", ev.text);
+            genstatus.textContent = ev.text;
           } else if (ev.type === "error") {
             feedRow("error", "!", ev.message);
             genstatus.textContent = `Error: ${ev.message}`;

@@ -13,6 +13,7 @@ const BIN = path.join(ROOT, "test", "bin");
 const PORT = 4198;
 const CONFIG = path.join(ROOT, "glade.config.json");
 const URL = `http://localhost:${PORT}/`;
+const MOCKS = ["mock-limit", "mock-ok", "mock-codex-json"];
 
 const ok = (m) => console.log(`  ✓ ${m}`);
 const fail = (m) => { console.error(`  ✗ ${m}`); process.exitCode = 1; };
@@ -35,7 +36,7 @@ function waitForServer(timeoutMs = 8000) {
 }
 
 async function main() {
-  for (const f of ["mock-limit", "mock-ok"]) fs.chmodSync(path.join(BIN, f), 0o755);
+  for (const f of MOCKS) fs.chmodSync(path.join(BIN, f), 0o755);
   const hadConfig = fs.existsSync(CONFIG);
   const backup = hadConfig ? fs.readFileSync(CONFIG) : null;
   fs.copyFileSync(path.join(ROOT, "test", "glade.config.test.json"), CONFIG);

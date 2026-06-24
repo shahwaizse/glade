@@ -12,6 +12,7 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const BIN = path.join(ROOT, "test", "bin");
 const PORT = 4199;
 const CONFIG = path.join(ROOT, "glade.config.json");
+const MOCKS = ["mock-limit", "mock-ok", "mock-codex-json"];
 
 const ok = (m) => console.log(`  ✓ ${m}`);
 const fail = (m) => { console.error(`  ✗ ${m}`); process.exitCode = 1; };
@@ -54,7 +55,7 @@ async function readNdjson(res) {
 }
 
 async function main() {
-  for (const f of ["mock-limit", "mock-ok"]) fs.chmodSync(path.join(BIN, f), 0o755);
+  for (const f of MOCKS) fs.chmodSync(path.join(BIN, f), 0o755);
 
   const hadConfig = fs.existsSync(CONFIG);
   const backup = hadConfig ? fs.readFileSync(CONFIG) : null;
@@ -119,6 +120,40 @@ async function main() {
     starts[0] === "mock-ok" && !selectedEvents.some((e) => e.type === "switch")
       ? ok("selected harness runs before fallback entries")
       : fail(`selected harness was not first: ${JSON.stringify(starts)}`);
+
+    await fetch(`http://localhost:${PORT}/api/config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ harness: "glade-missing-harness", harnessFallback: ["glade-missing-harness", "mock-ok"] }),
+    });
+    const unavailableRes = await fetch(`http://localhost:${PORT}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "fall through unavailable harness" }),
+    });
+    const unavailableEvents = await readNdjson(unavailableRes);
+    const unavailableSwitch = unavailableEvents.find((e) => e.type === "switch");
+    unavailableSwitch && unavailableSwitch.from === "glade-missing-harness" && unavailableSwitch.to === "mock-ok" && /unavailable/.test(unavailableSwitch.reason || "")
+      ? ok("missing harness falls through to the next harness")
+      : fail(`missing harness did not switch correctly: ${JSON.stringify(unavailableEvents)}`);
+
+    await fetch(`http://localhost:${PORT}/api/config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ harness: "mock-codex-json", harnessFallback: ["mock-codex-json"] }),
+    });
+    const codexRes = await fetch(`http://localhost:${PORT}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "parse codex json events" }),
+    });
+    const codexEvents = await readNdjson(codexRes);
+    codexEvents.some((e) => e.type === "tool" && e.name === "exec" && /pwd/.test(e.detail || ""))
+      ? ok("current Codex JSON command events become tool feed rows")
+      : fail(`Codex command event not forwarded: ${JSON.stringify(codexEvents)}`);
+    codexEvents.some((e) => e.type === "thought" && /codex status visible/.test(e.text || ""))
+      ? ok("current Codex JSON agent messages become status text")
+      : fail(`Codex agent message not forwarded: ${JSON.stringify(codexEvents)}`);
   } finally {
     server.kill("SIGTERM");
     if (hadConfig) fs.writeFileSync(CONFIG, backup);
