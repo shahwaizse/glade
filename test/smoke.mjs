@@ -13,6 +13,7 @@ const BIN = path.join(ROOT, "test", "bin");
 const PORT = 4199;
 const CONFIG = path.join(ROOT, "glade.config.json");
 const MOCKS = ["mock-limit", "mock-ok", "mock-codex-json"];
+const FAKE_CODEX_BIN = path.join(ROOT, "test", ".tmp-codex-bin");
 
 const ok = (m) => console.log(`  ✓ ${m}`);
 const fail = (m) => { console.error(`  ✗ ${m}`); process.exitCode = 1; };
@@ -56,6 +57,18 @@ async function readNdjson(res) {
 
 async function main() {
   for (const f of MOCKS) fs.chmodSync(path.join(BIN, f), 0o755);
+  fs.rmSync(FAKE_CODEX_BIN, { recursive: true, force: true });
+  fs.mkdirSync(FAKE_CODEX_BIN, { recursive: true });
+  fs.writeFileSync(path.join(FAKE_CODEX_BIN, "codex-argv.js"), `
+console.log(JSON.stringify({ type: "result", result: process.argv.slice(2).join(" ") }));
+`);
+  if (process.platform === "win32") {
+    fs.writeFileSync(path.join(FAKE_CODEX_BIN, "codex.cmd"), `@echo off\r\n"${process.execPath}" "%~dp0codex-argv.js" %*\r\n`);
+  } else {
+    const fakeCodex = path.join(FAKE_CODEX_BIN, "codex");
+    fs.writeFileSync(fakeCodex, "#!/usr/bin/env node\nrequire('./codex-argv.js');\n");
+    fs.chmodSync(fakeCodex, 0o755);
+  }
 
   const hadConfig = fs.existsSync(CONFIG);
   const backup = hadConfig ? fs.readFileSync(CONFIG) : null;
@@ -65,9 +78,18 @@ async function main() {
   const uploads = path.join(ROOT, "uploads");
   fs.rmSync(uploads, { recursive: true, force: true });
 
+  const testPath = process.platform === "win32"
+    ? [
+        FAKE_CODEX_BIN,
+        BIN,
+        path.dirname(process.execPath),
+        path.join(process.env.SystemRoot || "C:\\Windows", "System32"),
+      ].join(path.delimiter)
+    : `${FAKE_CODEX_BIN}${path.delimiter}${BIN}${path.delimiter}${process.env.PATH}`;
+
   const server = spawn("node", ["server.js"], {
     cwd: ROOT,
-    env: { ...process.env, GLADE_PORT: String(PORT), PATH: `${BIN}${path.delimiter}${process.env.PATH}` },
+    env: { ...process.env, GLADE_PORT: String(PORT), PATH: testPath },
     stdio: ["ignore", "ignore", "inherit"],
   });
 
@@ -154,8 +176,25 @@ async function main() {
     codexEvents.some((e) => e.type === "thought" && /codex status visible/.test(e.text || ""))
       ? ok("current Codex JSON agent messages become status text")
       : fail(`Codex agent message not forwarded: ${JSON.stringify(codexEvents)}`);
+
+    fs.writeFileSync(CONFIG, JSON.stringify({
+      harness: "codex",
+      harnessFallback: ["codex"],
+      harnessArgs: { codex: ["exec", "--full-auto", "--json"] },
+    }, null, 2));
+    const legacyCodexRes = await fetch(`http://localhost:${PORT}/api/generate`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "legacy codex args" }),
+    });
+    const legacyCodexEvents = await readNdjson(legacyCodexRes);
+    const legacyResult = legacyCodexEvents.find((e) => e.type === "result");
+    legacyResult && /--dangerously-bypass-approvals-and-sandbox/.test(legacyResult.text || "") && !/--full-auto/.test(legacyResult.text || "")
+      ? ok("legacy Codex --full-auto config is normalized before spawn")
+      : fail(`legacy Codex args were not normalized: ${JSON.stringify(legacyCodexEvents)}`);
   } finally {
     server.kill("SIGTERM");
+    fs.rmSync(FAKE_CODEX_BIN, { recursive: true, force: true });
     if (hadConfig) fs.writeFileSync(CONFIG, backup);
     else fs.rmSync(CONFIG, { force: true });
   }

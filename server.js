@@ -76,7 +76,7 @@ function loadConfig() {
           "--verbose",
           "--permission-mode", "bypassPermissions",
         ],
-        codex: ["exec", "--full-auto", "--json"],
+        codex: ["exec", "--dangerously-bypass-approvals-and-sandbox", "--json"],
       },
     },
     readJSON(CONFIG_FILE, {})
@@ -463,6 +463,23 @@ function textSignalsMissingCommand(text, command) {
   ).test(String(text || ""));
 }
 
+function harnessArgsFor(config, harness) {
+  const args = [...((config.harnessArgs || {})[harness] || [])];
+  // Codex deprecated --full-auto and now routes it through the Windows sandbox.
+  // On installs without codex-windows-sandbox-setup.exe, every shell command
+  // fails before the agent can read or edit files. Glade already runs harnesses
+  // against a trusted local repo, matching Codex's explicit bypass mode.
+  if (harness === "codex") {
+    const hasBypass = args.includes("--dangerously-bypass-approvals-and-sandbox");
+    const idx = args.indexOf("--full-auto");
+    if (idx >= 0) {
+      if (hasBypass) args.splice(idx, 1);
+      else args.splice(idx, 1, "--dangerously-bypass-approvals-and-sandbox");
+    }
+  }
+  return args;
+}
+
 // Spawn the harness. Resolves with a live child; rejects on a genuine spawn
 // failure. On Windows a bare command name that resolves to a .bat/.cmd shim
 // (common for npm-installed CLIs) fails with an async ENOENT even though the
@@ -508,7 +525,7 @@ function spawnHarness(harness, args) {
 
 // Spawn one harness attempt. Calls done("limit" | "unavailable" | "done" | "error") exactly once.
 function runAttempt(harness, fullPrompt, config, emit, res, done) {
-  const args = [...((config.harnessArgs || {})[harness] || [])];
+  const args = harnessArgsFor(config, harness);
   emit({ type: "start", harness });
 
   spawnHarness(harness, args).then(
@@ -771,11 +788,27 @@ async function proxyFetch(spec, res) {
 
 const shells = new Map(); // id -> { child, listeners:Set<res>, buffer:string }
 
+function defaultShell() {
+  if (process.platform === "win32") {
+    return {
+      cmd: process.env.ComSpec || "powershell.exe",
+      args: (process.env.ComSpec || "").toLowerCase().endsWith("cmd.exe")
+        ? ["/Q", "/K"]
+        : ["-NoLogo", "-NoProfile", "-ExecutionPolicy", "Bypass"],
+    };
+  }
+  return { cmd: process.env.SHELL || "/bin/bash", args: ["-i"] };
+}
+
 function shellSession(id) {
   let s = shells.get(id);
   if (s) return s;
-  const shellCmd = process.env.SHELL || "/bin/bash";
-  const child = spawn(shellCmd, ["-i"], { cwd: ROOT, env: { ...process.env, ...parseEnvFile(), PS1: "glade$ " } });
+  const shell = defaultShell();
+  const child = spawn(shell.cmd, shell.args, {
+    cwd: ROOT,
+    env: { ...process.env, ...parseEnvFile(), PS1: "glade$ " },
+    windowsHide: true,
+  });
   s = { child, listeners: new Set(), buffer: "" };
   const push = (data) => {
     const text = data.toString();
@@ -786,6 +819,13 @@ function shellSession(id) {
   };
   child.stdout.on("data", push);
   child.stderr.on("data", push);
+  child.on("error", (err) => {
+    push(`shell failed to start: ${err.message}\n`);
+    for (const res of s.listeners) {
+      try { res.write(`data: ${JSON.stringify({ type: "exit", code: 1 })}\n\n`); res.end(); } catch {}
+    }
+    shells.delete(id);
+  });
   child.on("close", (code) => {
     for (const res of s.listeners) {
       try { res.write(`data: ${JSON.stringify({ type: "exit", code })}\n\n`); res.end(); } catch {}
