@@ -27,7 +27,7 @@ The `glade` object handed to `mount(el, glade)`:
 - `glade.subscribe(payload, onMessage)` → open a streaming backend (SSE); returns an unsubscribe fn. Use for live data: log tails, tickers, monitors, chat. Auto-closed on unmount.
 - `glade.fetch(url, opts)` → outbound HTTP via the server proxy (no CORS limits). Returns `{ status, headers, text, json() }`. Prefer this over hand-rolling `https` in a backend for simple GETs.
 - `glade.emit(channel, data)` / `glade.on(channel, fn)` → the widget bus. Talk to other widgets (a clock drives a pomodoro, a location feeds weather+maps, a selection filters another widget). `on` returns an unsubscribe fn and auto-cleans on unmount.
-- `glade.store.get(k, default)` / `.set(k, v)` / `.del(k)` → persistence namespaced to this widget (localStorage).
+- `glade.store.get(k, default)` / `.set(k, v)` / `.del(k)` → persistence namespaced to this widget (localStorage). This is also the state captured/restored when a widget is saved to and summoned from the widget library, so keep meaningful widget state here.
 - `glade.refresh()` → re-mount this widget.
 
 Style guidance: Glade is a dark, minimal workspace. Use the provided CSS variables and classes inside widgets: `--ink` (text), `--ink-dim` (secondary text), `--accent` (focused/active controls), `--surface` (panel background), and `--line` (borders). Class `g-btn` for buttons, `g-input` for inputs, `g-list` / `g-row` for list layouts. Keep widgets quiet, legible, and responsive; avoid glass blur, decorative gradients, and oversized rounded panels. Inline `<style>` scoped to the widget root is fine.
@@ -100,7 +100,8 @@ To modify an existing widget, edit its files in place. To remove one, the user u
 These already exist in the shell — use them, don't reinvent them:
 
 - **Snapshots / undo.** Every generation auto-snapshots the canvas to `.glade/history/`. The user can undo (`Ctrl/Cmd-Z`, or the palette) and restore any earlier state. Builds are non-destructive — you don't need to be timid, but also don't delete the user's other widgets.
-- **Command palette** (`/` or `⌘K`): undo, history, rooms, clear canvas, re-run, harness switch, share/QR, and "open" the core widgets.
+- **Command palette** (`/` or `⌘K`): undo, history, rooms, clear canvas, re-run, harness switch, share/QR, the widget library, and "open" the core widgets.
+- **Widget library.** Any widget can be saved to a personal shelf via its `⠿` menu (the 6-dot handle at the top-left of the widget chrome — drag it to move the window, click it for options) → "Save widget": its files, its manifest entry, and the client state it kept via `glade.store`. The picker (dock → **Widgets**, or the palette) shows the shelf as a live grid of running previews; selecting one summons it into the current room with its state restored. The library lives outside rooms, so it's how a widget travels between them. Endpoints: `GET /api/library`, `POST /api/library/{save,add,delete}`.
 - **Core widgets** (built-in, summoned from the palette, not in the manifest): a **Terminal** (`web/core/terminal.js`, backed by `/api/shell/*`) and a **Glade** introspection panel (`web/core/glade-panel.js`). Don't recreate these unless asked for something different.
 - **Attachments:** the user can paste/drop *any* file or text (not just images); paths arrive in your prompt under `uploads/`.
 - **Network:** the server binds all interfaces and exposes a LAN URL/QR (palette → Share).

@@ -24,6 +24,7 @@ const palette = document.getElementById("palette");
 const palinput = document.getElementById("palinput");
 const pallist = document.getElementById("pallist");
 const palettebtn = document.getElementById("palettebtn");
+const librarybtn = document.getElementById("librarybtn");
 const freeformModeBtn = document.getElementById("freeformmode");
 const snapModeBtn = document.getElementById("snapmode");
 const snapPresetWrap = document.getElementById("snappresetwrap");
@@ -90,6 +91,8 @@ setIconButton(micBtn, "mic", "Start voice input");
 setIconButton(document.getElementById("go"), "send", "Send prompt");
 setIconButton(genclose, "x", "Hide build progress");
 palettebtn.innerHTML = `<span class="slash-mark" aria-hidden="true">/</span><span class="palette-label">Commands</span>`;
+librarybtn.innerHTML = `${icon("layout")}<span class="lib-btn-label">Widgets</span>`;
+librarybtn.onclick = () => openLibrary();
 freeformModeBtn.innerHTML = `${icon("panels")}<span>Free</span>`;
 snapModeBtn.innerHTML = `${icon("layout")}<span>Snap</span>`;
 
@@ -655,7 +658,9 @@ function widgetShell(w, core) {
   el.draggable = false;
   el.innerHTML = `
     <div class="widget-head" tabindex="0">
-      <span class="drag-dot" title="Drag to move">${icon("grip")}</span>
+      <span class="drag-dot"${core
+        ? ` title="Drag to move"`
+        : ` role="button" tabindex="0" aria-haspopup="menu" aria-expanded="false" aria-label="Widget options" title="Drag to move · click for options"`}>${icon("grip")}</span>
       <span class="widget-title"></span>
       <div class="widget-actions">
         <button type="button" class="widget-fullscreen" title="Maximize widget" aria-label="Maximize widget">${icon("maximize")}</button>
@@ -681,6 +686,7 @@ function widgetShell(w, core) {
   grid.appendChild(el);
   placeWindow(el, w.size);
   enableWindow(el);
+  if (!core) enableWidgetMenu(el, w);
   return el;
 }
 
@@ -702,9 +708,36 @@ async function addWidget(w) {
   await mountWidget(w, m);
 }
 
+// ---------- widget state (persisted + capturable) ----------
+// A widget's state lives in localStorage under a per-slug namespace, written
+// only through glade.store. Centralising the namespace lets us round-trip a
+// widget's whole state when it is saved to / summoned from the library.
+const storeNs = (slug) => `glade:${slug}:`;
+
+// Snapshot every key a widget has stored, as a plain { key: value } object.
+function captureWidgetState(slug) {
+  const ns = storeNs(slug);
+  const out = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i);
+    if (!key || !key.startsWith(ns)) continue;
+    try { out[key.slice(ns.length)] = JSON.parse(localStorage.getItem(key)); } catch {}
+  }
+  return out;
+}
+
+// Seed a widget's namespace from a captured state object (call before it mounts).
+function restoreWidgetState(slug, state) {
+  if (!state || typeof state !== "object") return;
+  const ns = storeNs(slug);
+  for (const [key, value] of Object.entries(state)) {
+    try { localStorage.setItem(ns + key, JSON.stringify(value)); } catch {}
+  }
+}
+
 // Build the glade API object handed to every widget's mount().
 function makeGladeApi(w, m) {
-  const ns = `glade:${w.slug}:`;
+  const ns = storeNs(w.slug);
   return {
     // call the widget's own backend (request/response)
     call: async (payload = {}) => {
@@ -743,9 +776,12 @@ function makeGladeApi(w, m) {
       m.cleanups.push(off);
       return off;
     },
-    // namespaced persistence
+    // namespaced persistence (corrupt/legacy values degrade to the default)
     store: {
-      get: (k, d = null) => { const v = localStorage.getItem(ns + k); return v == null ? d : JSON.parse(v); },
+      get: (k, d = null) => {
+        try { const v = localStorage.getItem(ns + k); return v == null ? d : JSON.parse(v); }
+        catch { return d; }
+      },
       set: (k, v) => localStorage.setItem(ns + k, JSON.stringify(v)),
       del: (k) => localStorage.removeItem(ns + k),
     },
@@ -883,9 +919,9 @@ function enableWindow(el) {
       });
   });
 
-  // double-click header → maximize / restore
+  // double-click header → maximize / restore (but not via the dot or actions)
   head.addEventListener("dblclick", (e) => {
-    if (e.target.closest(".widget-actions, .env-badge")) return;
+    if (e.target.closest(".widget-actions, .env-badge, .drag-dot")) return;
     toggleMaximize(el);
   });
 
@@ -926,6 +962,125 @@ function enableWindow(el) {
       saveGeom(el.dataset.slug, { x: nextX, y: nextY });
     }
   });
+}
+
+// The 6-dot control (top-left of the chrome) doubles as a drag handle and a
+// menu trigger: a press that moves past a small threshold drags the window (so
+// dragging never fights the menu); a press that stays put opens the widget's
+// context menu. Keyboard: focus it and press Enter/Space.
+function enableWidgetMenu(el, w) {
+  const btn = el.querySelector(".drag-dot");
+  if (!btn) return;
+  btn.classList.add("has-menu");
+  btn.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    e.stopPropagation();
+    toggleWidgetMenu(el, btn, w);
+  });
+  btn.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    bringToFront(el);
+    const snap = layoutMode === "snap";
+    const startX = e.clientX, startY = e.clientY;
+    const rect = grid.getBoundingClientRect();
+    const ox = parseFloat(el.style.left) || 0, oy = parseFloat(el.style.top) || 0;
+    let dragging = false;
+    try { btn.setPointerCapture(e.pointerId); } catch {}
+
+    const move = (ev) => {
+      const dx = ev.clientX - startX, dy = ev.clientY - startY;
+      if (!dragging) {
+        if (snap || Math.hypot(dx, dy) <= 5) return; // below threshold → still a click
+        dragging = true;
+        delete el.dataset.max;
+        updateWindowButtons(el);
+        el.classList.add("dragging");
+        dragSlug = el.dataset.slug;
+        closeWidgetMenu();
+      }
+      const x = Math.max(0, Math.min(ox + dx, rect.width - el.offsetWidth));
+      const y = Math.max(0, Math.min(oy + dy, rect.height - el.offsetHeight));
+      el.style.left = `${x}px`; el.style.top = `${y}px`;
+    };
+    const end = (ev) => {
+      btn.removeEventListener("pointermove", move);
+      btn.removeEventListener("pointerup", end);
+      btn.removeEventListener("pointercancel", end);
+      try { btn.releasePointerCapture(e.pointerId); } catch {}
+      if (dragging) {
+        el.classList.remove("dragging");
+        dragSlug = null;
+        saveGeom(el.dataset.slug, { x: parseFloat(el.style.left) || 0, y: parseFloat(el.style.top) || 0 });
+      } else if (ev.type !== "pointercancel") {
+        toggleWidgetMenu(el, btn, w);
+      }
+    };
+    btn.addEventListener("pointermove", move);
+    btn.addEventListener("pointerup", end);
+    btn.addEventListener("pointercancel", end);
+  });
+}
+
+let openWidgetMenu = null;
+function closeWidgetMenu() {
+  if (!openWidgetMenu) return;
+  const { pop, btn, onDoc, onKey, onDismiss } = openWidgetMenu;
+  pop.remove();
+  btn.setAttribute("aria-expanded", "false");
+  document.removeEventListener("pointerdown", onDoc, true);
+  document.removeEventListener("keydown", onKey, true);
+  window.removeEventListener("resize", onDismiss, true);
+  grid.removeEventListener("scroll", onDismiss, true);
+  openWidgetMenu = null;
+}
+
+// The menu's entries — just "Save widget" for now, but kept as a list so more
+// per-widget actions can slot in later.
+function widgetMenuItems(el, w) {
+  return [
+    { label: "Save widget", run: () => saveWidgetToLibrary(w.slug) },
+  ];
+}
+
+function toggleWidgetMenu(el, btn, w) {
+  if (openWidgetMenu && openWidgetMenu.btn === btn) { closeWidgetMenu(); return; }
+  closeWidgetMenu();
+
+  const pop = document.createElement("div");
+  pop.className = "widget-menu-pop glass";
+  pop.setAttribute("role", "menu");
+  for (const item of widgetMenuItems(el, w)) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "wm-item";
+    b.setAttribute("role", "menuitem");
+    b.textContent = item.label;
+    b.onclick = () => { closeWidgetMenu(); item.run(); };
+    pop.appendChild(b);
+  }
+  document.body.appendChild(pop);
+
+  // anchor under the button (left-aligned), flipping up / clamping in if needed
+  const r = btn.getBoundingClientRect();
+  const pw = pop.offsetWidth, ph = pop.offsetHeight;
+  let left = Math.max(8, Math.min(r.left, window.innerWidth - pw - 8));
+  let top = r.bottom + 6;
+  if (top + ph > window.innerHeight - 8) top = Math.max(8, r.top - ph - 6);
+  pop.style.left = `${left}px`;
+  pop.style.top = `${top}px`;
+  requestAnimationFrame(() => pop.classList.add("on"));
+  btn.setAttribute("aria-expanded", "true");
+
+  const onDoc = (e) => { if (!pop.contains(e.target) && !btn.contains(e.target)) closeWidgetMenu(); };
+  const onKey = (e) => { if (e.key === "Escape") closeWidgetMenu(); };
+  const onDismiss = () => closeWidgetMenu();
+  document.addEventListener("pointerdown", onDoc, true);
+  document.addEventListener("keydown", onKey, true);
+  window.addEventListener("resize", onDismiss, true);
+  grid.addEventListener("scroll", onDismiss, true);
+  openWidgetMenu = { pop, btn, onDoc, onKey, onDismiss };
 }
 
 function toggleMaximize(el) {
@@ -1103,14 +1258,21 @@ attachBtn.onclick = () => imgInput.click();
 imgInput.onchange = () => { addFiles(imgInput.files); imgInput.value = ""; };
 
 document.addEventListener("paste", (e) => {
-  if (document.activeElement === palinput) return;
+  const active = document.activeElement;
+  // Any focused text field other than the prompt (palette, env panel, widget
+  // inputs) owns its own paste — don't divert it into the canvas/prompt.
+  const foreignField =
+    active &&
+    active !== promptEl &&
+    (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable);
+  if (foreignField) return;
   const files = [...(e.clipboardData?.items || [])]
     .filter((it) => it.kind === "file")
     .map((it) => it.getAsFile())
     .filter(Boolean);
   if (files.length) { e.preventDefault(); addFiles(files); return; }
   // pasted plain text while not typing in the prompt → treat as an attachment
-  if (document.activeElement !== promptEl) {
+  if (active !== promptEl) {
     const text = e.clipboardData?.getData("text/plain");
     if (text && text.trim()) { e.preventDefault(); addPastedText(text); }
   }
@@ -1312,6 +1474,7 @@ function baseCommands() {
     { label: "History", hint: "restore an earlier snapshot", run: openHistory },
     { label: "Save room", hint: "freeze this canvas under a name", run: doSaveRoom },
     { label: "Open room", hint: "open a saved canvas", run: openRooms },
+    { label: "Widget library", hint: "browse & summon saved widgets", run: openLibrary },
     { label: "Clear canvas", hint: "remove every widget (undoable)", run: clearCanvas },
     { label: "Rerun last prompt", hint: lastPrompt ? lastPrompt.slice(0, 44) : "nothing yet", run: () => lastPrompt && generate(lastPrompt, []) },
     { label: "Use freeform windows", hint: layoutMode === "free" ? "active" : "floating layout", run: () => setLayoutMode("free") },
@@ -1504,6 +1667,265 @@ async function showShare() {
     <div class="share-urls">${(net.urls || []).map((u) => `<code>${u}</code>`).join("")}</div>
   `);
 }
+
+// ---------- widget library / picker ----------
+// Save individual widgets (their files + captured state) to a personal shelf,
+// then summon them into any room from a live, grid-style picker. Each saved
+// widget is mounted as a real, scaled-down, non-interactive preview.
+
+const PREVIEW_FRAME = { small: [320, 240], medium: [400, 320], large: [520, 380], full: [640, 440] };
+
+let libraryEl = null;
+let libraryOpen = false;
+let libraryPreviews = [];
+let libraryResizeObs = null;
+
+// Capture a widget's state and stash its whole self on the library shelf.
+async function saveWidgetToLibrary(slug) {
+  const widgetState = captureWidgetState(slug);
+  try {
+    const res = await fetch("/api/library/save", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug, state: widgetState }),
+    });
+    let r = {};
+    try { r = await res.json(); } catch {}
+    if (res.ok && r.ok) {
+      const stored = Object.keys(widgetState).length;
+      flash(`saved “${r.meta?.title || slug}” to the library${stored ? " (with state)" : ""}`);
+      if (libraryOpen) renderLibrary();
+      return;
+    }
+    // The library routes are new to the server; a server that predates them
+    // 404s with the generic router body ("not found"). Say so plainly rather
+    // than echoing a cryptic error.
+    if (res.status === 404 && /^not found$/i.test(r.error || "")) {
+      return flash("the widget library needs a server restart — run npm start again");
+    }
+    flash(r.error || "couldn't save widget");
+  } catch (err) {
+    flash(`save failed: ${err.message}`);
+  }
+}
+
+// Pull a saved widget into the current canvas, seeding its state before it mounts.
+async function addFromLibrary(meta) {
+  try {
+    const r = await (await fetch("/api/library/add", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug: meta.slug }),
+    })).json();
+    if (!r.ok) return flash(r.error || "couldn't add widget");
+    restoreWidgetState(r.slug, r.state);
+    closeLibrary();
+    await loadState();
+    const m = mounted.get(r.slug);
+    if (m) { bringToFront(m.el, 40); flashWidget(m.el); }
+    flash(r.already ? `“${meta.title || meta.slug}” refreshed in this room` : `added “${meta.title || meta.slug}”`);
+  } catch (err) {
+    flash(`add failed: ${err.message}`);
+  }
+}
+
+async function deleteLibraryWidget(meta) {
+  if (!window.confirm(`Delete “${meta.title || meta.slug}” from the library?`)) return;
+  try {
+    await fetch("/api/library/delete", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slug: meta.slug }),
+    });
+  } catch {}
+  renderLibrary();
+}
+
+function ensureLibraryEl() {
+  if (libraryEl) return libraryEl;
+  libraryEl = document.createElement("div");
+  libraryEl.id = "library";
+  libraryEl.hidden = true;
+  libraryEl.innerHTML = `
+    <div id="librarybox" class="glass" role="dialog" aria-modal="true" aria-label="Widget library">
+      <div class="lib-head">
+        <h2>Widget library</h2>
+        <span class="lib-sub-count" id="lib-count"></span>
+        <button type="button" class="lib-close" aria-label="Close library">${icon("x")}</button>
+      </div>
+      <div class="lib-grid" id="lib-grid"></div>
+    </div>`;
+  libraryEl.addEventListener("click", (e) => { if (e.target === libraryEl) closeLibrary(); });
+  libraryEl.querySelector(".lib-close").onclick = closeLibrary;
+  stage.appendChild(libraryEl);
+  return libraryEl;
+}
+
+async function openLibrary() {
+  ensureLibraryEl();
+  libraryEl.hidden = false;
+  libraryOpen = true;
+  requestAnimationFrame(() => libraryEl.classList.add("on"));
+  await renderLibrary();
+}
+
+function closeLibrary() {
+  if (!libraryEl || !libraryOpen) return;
+  libraryOpen = false;
+  teardownPreviews();
+  libraryEl.classList.remove("on");
+  setTimeout(() => { if (!libraryOpen) libraryEl.hidden = true; }, 220);
+}
+
+function teardownPreviews() {
+  if (libraryResizeObs) { libraryResizeObs.disconnect(); libraryResizeObs = null; }
+  for (const p of libraryPreviews.splice(0)) {
+    try { p.def?.unmount?.(p.body); } catch {}
+    for (const fn of p.cleanups.splice(0)) { try { fn(); } catch {} }
+  }
+}
+
+async function renderLibrary() {
+  const gridEl = libraryEl.querySelector("#lib-grid");
+  const countEl = libraryEl.querySelector("#lib-count");
+  teardownPreviews();
+  let widgets = [];
+  let needsRestart = false;
+  try {
+    const res = await fetch("/api/library");
+    if (res.status === 404) needsRestart = true;
+    else widgets = ((await res.json()).widgets) || [];
+  } catch {}
+  countEl.textContent = widgets.length ? `${widgets.length} saved` : "";
+  gridEl.innerHTML = "";
+  if (needsRestart) {
+    gridEl.innerHTML = `<div class="lib-empty"><strong>Library needs a server restart</strong><span>The widget library is new — restart Glade (<code>npm start</code>) to turn it on. Your widgets and rooms are untouched.</span></div>`;
+    return;
+  }
+  if (!widgets.length) {
+    gridEl.innerHTML = `<div class="lib-empty"><strong>No saved widgets yet</strong><span>Open any widget's ⠿ menu (top-left of the widget) and choose “Save widget” to keep it here — then summon it into any room.</span></div>`;
+    return;
+  }
+  libraryResizeObs = new ResizeObserver((entries) => {
+    for (const entry of entries) rescalePreview(entry.target);
+  });
+  const liveSlugs = new Set((state.widgets || []).map((w) => w.slug));
+  for (const meta of widgets) gridEl.appendChild(buildLibraryCard(meta, liveSlugs.has(meta.slug)));
+}
+
+function buildLibraryCard(meta, inRoom) {
+  const card = document.createElement("div");
+  card.className = "lib-card";
+  card.dataset.slug = meta.slug;
+  card.tabIndex = 0;
+  card.setAttribute("role", "button");
+  card.setAttribute("aria-label", `Add ${meta.title || meta.slug} to the current room`);
+  card.innerHTML = `
+    <div class="lib-preview"><div class="lib-frame"></div><span class="lib-add">＋ Add to room</span></div>
+    <div class="lib-foot">
+      <div class="lib-meta">
+        <span class="lib-title"></span>
+        <span class="lib-sub"></span>
+      </div>
+      <button type="button" class="lib-del" title="Delete from library" aria-label="Delete from library">${icon("trash")}</button>
+    </div>
+    ${inRoom ? `<span class="lib-badge">in room</span>` : ``}`;
+  card.querySelector(".lib-title").textContent = meta.title || meta.slug;
+  const sub = [meta.size || "medium"];
+  if (meta.hasBackend) sub.push("backend");
+  if (meta.hasState) sub.push("state");
+  card.querySelector(".lib-sub").textContent = sub.join(" · ");
+  card.querySelector(".lib-del").addEventListener("click", (e) => { e.stopPropagation(); deleteLibraryWidget(meta); });
+  card.addEventListener("click", () => addFromLibrary(meta));
+  card.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); addFromLibrary(meta); } });
+  mountPreview(meta, card.querySelector(".lib-preview"));
+  return card;
+}
+
+async function mountPreview(meta, box) {
+  const frame = box.querySelector(".lib-frame");
+  const [fw, fh] = PREVIEW_FRAME[meta.size] || PREVIEW_FRAME.medium;
+  frame.style.width = `${fw}px`;
+  frame.style.height = `${fh}px`;
+  const preview = { slug: meta.slug, def: {}, body: frame, cleanups: [] };
+  libraryPreviews.push(preview);
+  if (libraryResizeObs) libraryResizeObs.observe(box);
+  rescalePreview(box);
+  try {
+    const mod = await import(`/api/library/asset/${meta.slug}/widget.js?v=${meta.savedAt || Date.now()}`);
+    if (!libraryPreviews.includes(preview)) return; // picker closed mid-load
+    preview.def = mod.default || {};
+    await preview.def.mount?.(frame, makePreviewApi(meta, preview));
+  } catch (err) {
+    frame.innerHTML = `<div class="lib-fallback"><strong>${meta.title || meta.slug}</strong><span>preview unavailable</span></div>`;
+  }
+  requestAnimationFrame(() => rescalePreview(box));
+}
+
+// Fit the fixed-size preview frame into its (responsive) box, centered.
+function rescalePreview(box) {
+  const frame = box.querySelector(".lib-frame");
+  if (!frame) return;
+  const fw = parseFloat(frame.style.width) || 400;
+  const fh = parseFloat(frame.style.height) || 320;
+  if (!box.clientWidth || !box.clientHeight) return;
+  const scale = Math.min(box.clientWidth / fw, box.clientHeight / fh);
+  frame.style.transform = `scale(${scale})`;
+  frame.style.left = `${Math.max(0, (box.clientWidth - fw * scale) / 2)}px`;
+  frame.style.top = `${Math.max(0, (box.clientHeight - fh * scale) / 2)}px`;
+}
+
+// A sandboxed glade API for previews: real backend (the saved copy) + proxy,
+// but an isolated bus and an in-memory store seeded from the saved state, so a
+// preview can never disturb live widgets or the saved snapshot.
+function makePreviewApi(meta, preview) {
+  const previewBus = new EventTarget();
+  const mem = { ...(meta.state || {}) };
+  return {
+    call: async (payload = {}) => {
+      const r = await (await fetch(`/api/library/widget/${meta.slug}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload || {}),
+      })).json();
+      if (!r.ok) throw new Error(r.error || "backend failed");
+      return r.result;
+    },
+    subscribe: (payload, onMessage) => {
+      const src = new EventSource(`/api/library/stream/${meta.slug}?payload=${encodeURIComponent(JSON.stringify(payload || {}))}`);
+      src.onmessage = (e) => { try { onMessage(JSON.parse(e.data)); } catch {} };
+      const close = () => src.close();
+      preview.cleanups.push(close);
+      return close;
+    },
+    fetch: async (url, opts = {}) => {
+      const r = await (await fetch("/api/proxy", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url, method: opts.method, headers: opts.headers, body: opts.body }),
+      })).json();
+      if (!r.ok) throw new Error(r.error || "fetch failed");
+      return { status: r.status, headers: r.headers, text: r.body, json: () => JSON.parse(r.body) };
+    },
+    emit: (channel, detail) => previewBus.dispatchEvent(new CustomEvent(channel, { detail })),
+    on: (channel, fn) => {
+      const h = (e) => fn(e.detail);
+      previewBus.addEventListener(channel, h);
+      const off = () => previewBus.removeEventListener(channel, h);
+      preview.cleanups.push(off);
+      return off;
+    },
+    store: {
+      get: (k, d = null) => (k in mem ? mem[k] : d),
+      set: (k, v) => { mem[k] = v; },
+      del: (k) => { delete mem[k]; },
+    },
+    refresh: () => {},
+  };
+}
+
+// Briefly pulse a freshly-summoned widget so the eye finds where it landed.
+function flashWidget(el) {
+  el.classList.add("just-added");
+  setTimeout(() => el.classList.remove("just-added"), 900);
+}
+
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && libraryOpen) closeLibrary(); });
 
 // ---------- small UI helpers ----------
 

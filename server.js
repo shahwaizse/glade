@@ -28,6 +28,7 @@ const CONFIG_FILE = path.join(ROOT, "glade.config.json");
 const GLADE_DIR = path.join(ROOT, ".glade");
 const HISTORY_DIR = path.join(GLADE_DIR, "history");
 const ROOMS_DIR = path.join(GLADE_DIR, "rooms");
+const LIBRARY_DIR = path.join(GLADE_DIR, "library");
 const UPLOADS_DIR = path.join(ROOT, "uploads");
 const PORT = process.env.GLADE_PORT || 4173;
 const MAX_HISTORY = 40;
@@ -307,6 +308,159 @@ function renameRoom(from, to, res) {
     const meta = readJSON(metaFile, {});
     fs.writeFileSync(metaFile, JSON.stringify({ ...meta, name: newSlug, renamedAt: new Date().toISOString() }, null, 2));
     sendJSON(res, 200, { ok: true, name: newSlug });
+  } catch (err) {
+    sendJSON(res, 500, { ok: false, error: err.message });
+  }
+}
+
+// ---------- widget library ----------
+//
+// A personal shelf of individual widgets. Where a room snapshots the whole
+// canvas, the library keeps single widgets — their files, their manifest entry,
+// and the client-side state captured at save time — so any widget can be
+// summoned into any room without dragging the rest of the canvas along.
+
+function widgetSlugOk(slug) {
+  return typeof slug === "string" && /^[a-z0-9-]+$/.test(slug);
+}
+
+function libraryEntryMeta(slug) {
+  return readJSON(path.join(LIBRARY_DIR, slug, "meta.json"), null);
+}
+
+function listLibrary(res) {
+  const out = [];
+  if (fs.existsSync(LIBRARY_DIR)) {
+    for (const name of fs.readdirSync(LIBRARY_DIR)) {
+      const meta = libraryEntryMeta(name);
+      if (meta && meta.slug) {
+        meta.state = readJSON(path.join(LIBRARY_DIR, name, "state.json"), {});
+        out.push(meta);
+      }
+    }
+  }
+  out.sort((a, b) => (b.savedAt || 0) - (a.savedAt || 0));
+  sendJSON(res, 200, { widgets: out });
+}
+
+// Copy a live widget (its folder, its backend, its manifest entry) plus the
+// state the browser captured for it into .glade/library/<slug>.
+function saveWidgetToLibrary(spec, res) {
+  const slug = spec && spec.slug;
+  if (!widgetSlugOk(slug)) return sendJSON(res, 400, { error: "bad slug" });
+  const srcWidget = path.join(WIDGETS_DIR, slug);
+  const manifest = readJSON(MANIFEST, { widgets: [] });
+  const entry = (manifest.widgets || []).find((w) => w.slug === slug);
+  if (!fs.existsSync(srcWidget) || !entry) return sendJSON(res, 404, { error: "widget not found" });
+  try {
+    const dir = path.join(LIBRARY_DIR, slug);
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.mkdirSync(dir, { recursive: true });
+    copyDir(srcWidget, path.join(dir, "widget"));
+    const backendSrc = path.join(BACKENDS, slug + ".js");
+    const hasBackend = fs.existsSync(backendSrc);
+    if (hasBackend) fs.copyFileSync(backendSrc, path.join(dir, "backend.js"));
+    const state = spec.state && typeof spec.state === "object" ? spec.state : {};
+    fs.writeFileSync(path.join(dir, "state.json"), JSON.stringify(state, null, 2));
+    fs.writeFileSync(path.join(dir, "entry.json"), JSON.stringify(entry, null, 2));
+    const meta = {
+      slug,
+      title: entry.title || slug,
+      size: entry.size || "medium",
+      env: entry.env || [],
+      hasBackend,
+      hasState: Object.keys(state).length > 0,
+      savedAt: Date.now(),
+    };
+    fs.writeFileSync(path.join(dir, "meta.json"), JSON.stringify(meta, null, 2));
+    sendJSON(res, 200, { ok: true, meta });
+  } catch (err) {
+    sendJSON(res, 500, { ok: false, error: err.message });
+  }
+}
+
+// Inject a saved widget into the current canvas. Snapshots first (undoable),
+// writes the files + manifest entry, and hands the saved state back so the
+// browser can seed it before the widget mounts.
+function addWidgetFromLibrary(spec, res) {
+  const slug = spec && spec.slug;
+  if (!widgetSlugOk(slug)) return sendJSON(res, 400, { error: "bad slug" });
+  const dir = path.join(LIBRARY_DIR, slug);
+  const entry = readJSON(path.join(dir, "entry.json"), null);
+  if (!fs.existsSync(dir) || !entry) return sendJSON(res, 404, { error: "not in library" });
+  try {
+    snapshot({ label: `before adding "${slug}" from library` });
+    fs.rmSync(path.join(WIDGETS_DIR, slug), { recursive: true, force: true });
+    copyDir(path.join(dir, "widget"), path.join(WIDGETS_DIR, slug));
+    const backendSrc = path.join(dir, "backend.js");
+    if (fs.existsSync(backendSrc)) {
+      fs.mkdirSync(BACKENDS, { recursive: true });
+      fs.copyFileSync(backendSrc, path.join(BACKENDS, slug + ".js"));
+    }
+    const manifest = readJSON(MANIFEST, { widgets: [] });
+    manifest.widgets = manifest.widgets || [];
+    const already = manifest.widgets.some((w) => w.slug === slug);
+    manifest.widgets = already
+      ? manifest.widgets.map((w) => (w.slug === slug ? entry : w))
+      : [...manifest.widgets, entry];
+    fs.writeFileSync(MANIFEST, JSON.stringify(manifest, null, 2));
+    const state = readJSON(path.join(dir, "state.json"), {});
+    sendJSON(res, 200, { ok: true, slug, entry, state, already });
+  } catch (err) {
+    sendJSON(res, 500, { ok: false, error: err.message });
+  }
+}
+
+function deleteFromLibrary(spec, res) {
+  const slug = spec && spec.slug;
+  if (!widgetSlugOk(slug)) return sendJSON(res, 400, { error: "bad slug" });
+  const dir = path.join(LIBRARY_DIR, slug);
+  if (!fs.existsSync(dir)) return sendJSON(res, 404, { error: "not in library" });
+  try {
+    fs.rmSync(dir, { recursive: true, force: true });
+    sendJSON(res, 200, { ok: true, slug });
+  } catch (err) {
+    sendJSON(res, 500, { ok: false, error: err.message });
+  }
+}
+
+// Serve a saved widget's static files so the picker can mount it as a live
+// preview. Scoped to the library widget dir with the same traversal guard as
+// the main static route.
+function serveLibraryAsset(slug, rel, res) {
+  if (!widgetSlugOk(slug)) return sendJSON(res, 400, { error: "bad slug" });
+  const baseDir = path.join(LIBRARY_DIR, slug, "widget");
+  const file = path.normalize(path.join(baseDir, rel || "widget.js"));
+  if (!file.startsWith(baseDir)) return sendJSON(res, 403, { error: "forbidden" });
+  if (fs.existsSync(file) && fs.statSync(file).isFile()) {
+    res.writeHead(200, {
+      "Content-Type": MIME[path.extname(file)] || "application/octet-stream",
+      "Cache-Control": "no-store",
+    });
+    return fs.createReadStream(file).pipe(res);
+  }
+  sendJSON(res, 404, { error: "not found" });
+}
+
+function loadLibraryBackend(slug) {
+  const file = path.join(LIBRARY_DIR, slug, "backend.js");
+  if (!fs.existsSync(file)) return null;
+  delete require.cache[require.resolve(file)];
+  return require(file);
+}
+
+// Request/response backend for a library preview (mirrors callWidgetBackend but
+// runs the saved copy, on a separate state namespace so previews never disturb
+// the live widget's shared state).
+async function callLibraryBackend(slug, payload, res) {
+  if (!widgetSlugOk(slug)) return sendJSON(res, 400, { error: "bad slug" });
+  const handler = loadLibraryBackend(slug);
+  if (!handler) return sendJSON(res, 404, { error: `no backend for ${slug}` });
+  try {
+    const fn = typeof handler === "function" ? handler : handler.handler;
+    if (typeof fn !== "function") throw new Error(`backend ${slug} has no callable handler`);
+    const result = await fn(payload, backendCtx("library:" + slug));
+    sendJSON(res, 200, { ok: true, result });
   } catch (err) {
     sendJSON(res, 500, { ok: false, error: err.message });
   }
@@ -712,15 +866,11 @@ async function callWidgetBackend(slug, payload, res) {
   }
 }
 
-// Long-lived streaming backend over Server-Sent Events. A backend opts in by
+// Shared Server-Sent-Events driver for streaming backends. A backend opts in by
 // exporting `stream(payload, ctx)` where ctx adds `send(event)` and
-// `onClose(fn)`. Lets widgets build log tailers, tickers, monitors, chat.
-async function streamWidgetBackend(slug, payload, req, res) {
-  if (!/^[a-z0-9-]+$/.test(slug)) return sendJSON(res, 400, { error: "bad slug" });
-  const handler = loadBackend(slug);
-  const fn = handler && (handler.stream || (typeof handler === "object" && handler.stream));
-  if (typeof fn !== "function") return sendJSON(res, 404, { error: `no stream backend for ${slug}` });
-
+// `onClose(fn)`. Lets widgets build log tailers, tickers, monitors, chat — and
+// lets the picker drive live previews of saved streaming widgets.
+function runStreamBackend(fn, ctxBase, payload, req, res) {
   res.writeHead(200, {
     "Content-Type": "text/event-stream; charset=utf-8",
     "Cache-Control": "no-cache",
@@ -731,7 +881,7 @@ async function streamWidgetBackend(slug, payload, req, res) {
   const ping = setInterval(() => res.write(": ping\n\n"), 25000);
   const closers = [];
   const ctx = {
-    ...backendCtx(slug),
+    ...ctxBase,
     send: (event) => {
       try { res.write(`data: ${JSON.stringify(event)}\n\n`); } catch {}
     },
@@ -742,13 +892,29 @@ async function streamWidgetBackend(slug, payload, req, res) {
     for (const fn of closers) { try { fn(); } catch {} }
   };
   req.on("close", cleanup);
-  try {
-    await fn(payload, ctx);
-  } catch (err) {
-    ctx.send({ type: "error", error: err.message });
-    cleanup();
-    res.end();
-  }
+  Promise.resolve()
+    .then(() => fn(payload, ctx))
+    .catch((err) => {
+      ctx.send({ type: "error", error: err.message });
+      cleanup();
+      res.end();
+    });
+}
+
+async function streamWidgetBackend(slug, payload, req, res) {
+  if (!/^[a-z0-9-]+$/.test(slug)) return sendJSON(res, 400, { error: "bad slug" });
+  const handler = loadBackend(slug);
+  const fn = handler && handler.stream;
+  if (typeof fn !== "function") return sendJSON(res, 404, { error: `no stream backend for ${slug}` });
+  runStreamBackend(fn, backendCtx(slug), payload, req, res);
+}
+
+async function streamLibraryBackend(slug, payload, req, res) {
+  if (!widgetSlugOk(slug)) return sendJSON(res, 400, { error: "bad slug" });
+  const handler = loadLibraryBackend(slug);
+  const fn = handler && handler.stream;
+  if (typeof fn !== "function") return sendJSON(res, 404, { error: `no stream backend for ${slug}` });
+  runStreamBackend(fn, backendCtx("library:" + slug), payload, req, res);
 }
 
 function removeWidget(slug, res) {
@@ -955,6 +1121,34 @@ const server = http.createServer(async (req, res) => {
       return renameRoom(from, to, res);
     }
 
+    // widget library
+    if (p === "/api/library" && req.method === "GET") return listLibrary(res);
+    if (p === "/api/library/save" && req.method === "POST") {
+      const spec = JSON.parse((await readBody(req, 5e6)) || "{}");
+      return saveWidgetToLibrary(spec, res);
+    }
+    if (p === "/api/library/add" && req.method === "POST") {
+      const spec = JSON.parse((await readBody(req)) || "{}");
+      return addWidgetFromLibrary(spec, res);
+    }
+    if (p === "/api/library/delete" && req.method === "POST") {
+      const spec = JSON.parse((await readBody(req)) || "{}");
+      return deleteFromLibrary(spec, res);
+    }
+    const libStreamCall = p.match(/^\/api\/library\/stream\/([a-z0-9-]+)$/);
+    if (libStreamCall && req.method === "GET") {
+      let payload = {};
+      try { payload = JSON.parse(url.searchParams.get("payload") || "{}"); } catch {}
+      return streamLibraryBackend(libStreamCall[1], payload, req, res);
+    }
+    const libWidgetCall = p.match(/^\/api\/library\/widget\/([a-z0-9-]+)$/);
+    if (libWidgetCall && req.method === "POST") {
+      const payload = JSON.parse((await readBody(req)) || "{}");
+      return callLibraryBackend(libWidgetCall[1], payload, res);
+    }
+    const libAsset = p.match(/^\/api\/library\/asset\/([a-z0-9-]+)\/(.+)$/);
+    if (libAsset && req.method === "GET") return serveLibraryAsset(libAsset[1], decodeURIComponent(libAsset[2]), res);
+
     if (p === "/api/env" && req.method === "POST") {
       const updates = JSON.parse((await readBody(req)) || "{}");
       writeEnvFile(updates);
@@ -1011,6 +1205,7 @@ fs.mkdirSync(BACKENDS, { recursive: true });
 fs.mkdirSync(WIDGETS_DIR, { recursive: true });
 fs.mkdirSync(HISTORY_DIR, { recursive: true });
 fs.mkdirSync(ROOMS_DIR, { recursive: true });
+fs.mkdirSync(LIBRARY_DIR, { recursive: true });
 if (!fs.existsSync(MANIFEST)) fs.writeFileSync(MANIFEST, JSON.stringify({ widgets: [] }, null, 2));
 
 server.listen(PORT, "0.0.0.0", () => {
